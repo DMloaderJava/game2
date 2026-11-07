@@ -28,6 +28,8 @@ import { EventSystem } from './systems/event-system';
 import { RenderSystem } from './systems/render-system';
 import { SaveSystem } from './systems/save-system';
 import { DeathSystem } from './systems/death-system';
+import { MiningSystem } from './systems/mining-system';
+import { ChunkSystem } from './systems/chunk-system';
 
 import { Transform } from './components/transform';
 import { PhysicsBody } from './components/physics-body';
@@ -48,6 +50,8 @@ import {
 } from './components/character';
 import { Grabbing, Grabbed, Pushable } from './components/grab';
 import { IntentMove } from './components/intent';
+import { Chunk, Biome, WorldLayerComp } from './components/world';
+import { MiningTool, Mineable, Deposit, Drill } from './components/mining';
 import { Vec2 } from './core/vec2';
 
 // 1. Сервисы (DI)
@@ -79,10 +83,16 @@ world.registerComponent(Grabbing as unknown as symbol);
 world.registerComponent(Grabbed as unknown as symbol);
 world.registerComponent(Pushable as unknown as symbol);
 world.registerComponent(IntentMove as unknown as symbol);
+world.registerComponent(Chunk as unknown as symbol);
+world.registerComponent(Biome as unknown as symbol);
+world.registerComponent(WorldLayerComp as unknown as symbol);
+world.registerComponent(MiningTool as unknown as symbol);
+world.registerComponent(Mineable as unknown as symbol);
+world.registerComponent(Deposit as unknown as symbol);
+world.registerComponent(Drill as unknown as symbol);
 
-// 4. Системы, на которые ссылаются другие системы
+// 4. Сервис выносливости/энергии (общий для нескольких систем)
 const staminaEnergySystem = new StaminaEnergySystem(eventBus);
-const deathSystem = new DeathSystem(eventBus);
 
 // 5. Адаптер stamina/energy для GrabThrowSystem
 const staminaEnergy = {
@@ -98,21 +108,23 @@ const staminaEnergy = {
 };
 
 // 6. Базовые системы в порядке приоритета
-world.addSystem(new InputSystem(input, eventBus));        // 10
-world.addSystem(new CharacterSystem(eventBus));           // 12  ← стейт-машина персонажа
-world.addSystem(staminaEnergySystem);                     // 18  ← выносливость/энергия
-world.addSystem(new AISystem(physics, eventBus));         // 20
+world.addSystem(new ChunkSystem(eventBus));                    // 8  ← загрузка чанков мира
+world.addSystem(new InputSystem(input, eventBus));             // 10
+world.addSystem(new CharacterSystem(eventBus));                // 12  ← стейт-машина персонажа
+world.addSystem(staminaEnergySystem);                          // 18  ← выносливость/энергия
+world.addSystem(new AISystem(physics, eventBus));              // 20
 world.addSystem(new GrabThrowSystem(physics, eventBus, staminaEnergy)); // 22
+world.addSystem(new MiningSystem(physics, eventBus));          // 28  ← добыча и разрушение тайлов
 const gravitySystem = new GravitySystem(physics, eventBus);
-world.addSystem(gravitySystem);                           // 25 ← гравитация перед физикой
-world.addSystem(new PhysicsSystem(physics, eventBus));    // 30
-world.addSystem(new ConstructionSystem(physics, eventBus)); // 40
-world.addSystem(new InventorySystem(eventBus));           // 50
-world.addSystem(new EventSystem(eventBus));               // 60
-const renderSystem = new RenderSystem(render);            // 90
+world.addSystem(gravitySystem);                                // 25 ← гравитация перед физикой (порядок в addSystem сортирует)
+world.addSystem(new PhysicsSystem(physics, eventBus));         // 30
+world.addSystem(new ConstructionSystem(physics, eventBus));    // 40
+world.addSystem(new InventorySystem(eventBus));                // 50
+world.addSystem(new EventSystem(eventBus));                    // 60
+const renderSystem = new RenderSystem(render);                 // 90
 world.addSystem(renderSystem);
-world.addSystem(deathSystem);                             // 100 ← смерть
-world.addSystem(new SaveSystem(storage, eventBus));       // 100
+world.addSystem(new DeathSystem(eventBus));                    // 100 ← смерть
+world.addSystem(new SaveSystem(storage, eventBus));            // 100
 
 // 7. Пример: создание игрока
 const player = world.createEntity();
