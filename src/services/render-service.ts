@@ -159,27 +159,14 @@ export class RenderService {
   async setBackgroundTexture(url: string): Promise<void> {
     const texture = await this.loadTexture(url);
     const app = this.app;
-    if (app) {
-      // Ждём декодирования текстуры перед чтением width/height (PixiJS v8)
-      if ((texture.width ?? 0) === 0 || (texture.height ?? 0) === 0) {
-        await new Promise<void>((resolve) => {
-          const handler = () => resolve();
-          if ((texture.width ?? 0) > 0 && (texture.height ?? 0) > 0) {
-            handler();
-            return;
-          }
-          texture.on('update', handler);
-          setTimeout(handler, 2000);
-        });
-      }
-      const bg: any = new PIXI.Sprite(texture);
-      const renderer: any = app.renderer;
-      const tw = (texture.width ?? renderer.width) > 0 ? texture.width : renderer.width;
-      const th = (texture.height ?? renderer.height) > 0 ? texture.height : renderer.height;
-      bg.scale.set(renderer.width / tw, renderer.height / th);
-      this.stage?.addChildAt(bg, 0);
-      this.displayObjects.set(-1, bg);
-    }
+    if (!app || !texture) return;
+    const bg: any = new PIXI.Sprite(texture);
+    const renderer: any = app.renderer;
+    // Заполняем экран фоном, не читая width/height текстуры (PixiJS v8 может вернуть 0 до декодирования)
+    bg.width = renderer.width;
+    bg.height = renderer.height;
+    this.stage?.addChildAt(bg, 0);
+    this.displayObjects.set(-1, bg);
   }
 
   /** Переключить анимацию у AnimatedSprite сущности (или текстуру у обычного Sprite). */
