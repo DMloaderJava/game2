@@ -24,12 +24,14 @@ import { StaminaEnergySystem } from './systems/stamina-energy-system';
 import { GrabThrowSystem } from './systems/grab-throw-system';
 import { ConstructionSystem } from './systems/construction-system';
 import { InventorySystem } from './systems/inventory-system';
+import { CraftingSystem } from './systems/crafting-system';
 import { EventSystem } from './systems/event-system';
 import { RenderSystem } from './systems/render-system';
 import { SaveSystem } from './systems/save-system';
 import { DeathSystem } from './systems/death-system';
 import { MiningSystem } from './systems/mining-system';
 import { ChunkSystem } from './systems/chunk-system';
+import { DeviceSystem } from './systems/device-system';
 
 import { Transform } from './components/transform';
 import { PhysicsBody } from './components/physics-body';
@@ -52,6 +54,9 @@ import { Grabbing, Grabbed, Pushable } from './components/grab';
 import { IntentMove } from './components/intent';
 import { Chunk, Biome, WorldLayerComp } from './components/world';
 import { MiningTool, Mineable, Deposit, Drill } from './components/mining';
+import { ItemStack, Inventory, Equipment, UnlockedBlueprint, CraftingQueue, CraftingRecipe } from './components/inventory';
+import { Structure, Buildable, SnapGrid, StructuralIntegrity, GravityAnchor, GhostPreview } from './components/construction';
+import { Device, EnergyNode, EnergyCable, Conveyor, ItemRoute, PowerProducer, PowerConsumer, EnergyStorage } from './components/devices';
 import { Vec2 } from './core/vec2';
 
 // 1. Сервисы (DI)
@@ -91,10 +96,35 @@ world.registerComponent(Mineable as unknown as symbol);
 world.registerComponent(Deposit as unknown as symbol);
 world.registerComponent(Drill as unknown as symbol);
 
+// Инвентарь, крафт, строительство, устройства
+world.registerComponent(ItemStack as unknown as symbol);
+world.registerComponent(Inventory as unknown as symbol);
+world.registerComponent(Equipment as unknown as symbol);
+world.registerComponent(UnlockedBlueprint as unknown as symbol);
+world.registerComponent(CraftingQueue as unknown as symbol);
+world.registerComponent(CraftingRecipe as unknown as symbol);
+world.registerComponent(Structure as unknown as symbol);
+world.registerComponent(Buildable as unknown as symbol);
+world.registerComponent(SnapGrid as unknown as symbol);
+world.registerComponent(StructuralIntegrity as unknown as symbol);
+world.registerComponent(GravityAnchor as unknown as symbol);
+world.registerComponent(GhostPreview as unknown as symbol);
+world.registerComponent(Device as unknown as symbol);
+world.registerComponent(EnergyNode as unknown as symbol);
+world.registerComponent(EnergyCable as unknown as symbol);
+world.registerComponent(Conveyor as unknown as symbol);
+world.registerComponent(ItemRoute as unknown as symbol);
+world.registerComponent(PowerProducer as unknown as symbol);
+world.registerComponent(PowerConsumer as unknown as symbol);
+world.registerComponent(EnergyStorage as unknown as symbol);
+
 // 4. Сервис выносливости/энергии (общий для нескольких систем)
 const staminaEnergySystem = new StaminaEnergySystem(eventBus);
 
-// 5. Адаптер stamina/energy для GrabThrowSystem
+// 5. Система крафта (нужна ссылкой для регистрации рецептов плагинами)
+const craftingSystem = new CraftingSystem(eventBus);
+
+// 6. Адаптер stamina/energy для GrabThrowSystem
 const staminaEnergy = {
   spendStamina: (entity: number, amount: number, reason: string) => {
     staminaEnergySystem.spendStamina(entity, amount, reason);
@@ -107,7 +137,7 @@ const staminaEnergy = {
   },
 };
 
-// 6. Базовые системы в порядке приоритета
+// 7. Базовые системы в порядке приоритета
 world.addSystem(new ChunkSystem(eventBus));                    // 8  ← загрузка чанков мира
 world.addSystem(new InputSystem(input, eventBus));             // 10
 world.addSystem(new CharacterSystem(eventBus));                // 12  ← стейт-машина персонажа
@@ -116,17 +146,19 @@ world.addSystem(new AISystem(physics, eventBus));              // 20
 world.addSystem(new GrabThrowSystem(physics, eventBus, staminaEnergy)); // 22
 world.addSystem(new MiningSystem(physics, eventBus));          // 28  ← добыча и разрушение тайлов
 const gravitySystem = new GravitySystem(physics, eventBus);
-world.addSystem(gravitySystem);                                // 25 ← гравитация перед физикой (порядок в addSystem сортирует)
+world.addSystem(gravitySystem);                                // 25 ← гравитация (sort по приоритету)
 world.addSystem(new PhysicsSystem(physics, eventBus));         // 30
-world.addSystem(new ConstructionSystem(physics, eventBus));    // 40
-world.addSystem(new InventorySystem(eventBus));                // 50
-world.addSystem(new EventSystem(eventBus));                    // 60
+world.addSystem(new ConstructionSystem(physics, eventBus));    // 40  ← строительство
+world.addSystem(new InventorySystem(eventBus));                // 50  ← инвентарь
+world.addSystem(craftingSystem);                               // 52  ← крафт
+world.addSystem(new DeviceSystem(eventBus));                   // 55  ← устройства и энергия
+world.addSystem(new EventSystem(eventBus));                    // 60  ← катастрофы
 const renderSystem = new RenderSystem(render);                 // 90
 world.addSystem(renderSystem);
 world.addSystem(new DeathSystem(eventBus));                    // 100 ← смерть
 world.addSystem(new SaveSystem(storage, eventBus));            // 100
 
-// 7. Пример: создание игрока
+// 8. Пример: создание игрока
 const player = world.createEntity();
 world.addComponent(player, Transform as unknown as symbol, {
   x: 100, y: 100, rotation: 0, scaleX: 1, scaleY: 1,
@@ -182,18 +214,29 @@ world.addComponent(player, GravityForce as unknown as symbol, {
   vector: new Vec2(0, 9.81), dirty: true,
 });
 
-// 8. Глобальная гравитация мира (по умолчанию вниз, земная)
+// Инвентарь игрока
+world.addComponent(player, Inventory as unknown as symbol, {
+  slots: Array(20).fill(null),
+  maxSlots: 20,
+  maxWeight: 200,
+  currentWeight: 0,
+});
+world.addComponent(player, Equipment as unknown as symbol, {
+  head: null, chest: null, hands: null, legs: null, tool: null, backpack: null,
+});
+
+// 9. Глобальная гравитация мира (по умолчанию вниз, земная)
 gravitySystem.setGlobalGravity(new Vec2(0, 9.81), 1, true);
 
-// 9. Режим игры (загружается из сохранения в SaveSystem)
+// 10. Режим игры (загружается из сохранения в SaveSystem)
 // deathSystem.setGameMode('softcore'); // или 'hardcore'
 
-// 10. Точка спавна
+// 11. Точка спавна
 const spawn = world.createEntity();
 world.addComponent(spawn, Transform as unknown as symbol, { x: 100, y: 100, rotation: 0, scaleX: 1, scaleY: 1 });
 world.addComponent(spawn, RespawnPoint as unknown as symbol, { position: new Vec2(100, 100), active: true });
 
-// 11. Игровой цикл: фиксированная физика + интерполированный рендер
+// 12. Игровой цикл: фиксированная физика + интерполированный рендер
 const loop = new GameLoop(
   world,
   DEFAULT_GAME_CONFIG.fixedTimeStep,
