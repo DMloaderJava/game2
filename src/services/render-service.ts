@@ -1,5 +1,6 @@
 /**
  * RenderService — обёртка над PixiJS v8.
+ * Только текстуры и спрайты — никаких Graphics примитивов для игровых объектов.
  */
 import * as PIXI from 'pixi.js';
 
@@ -10,10 +11,12 @@ export class RenderService {
 
   layers = new Map<number, PIXI.Container>();
   private displayObjects = new Map<number, any>();
+  private textures = new Map<string, PIXI.Texture>();
   private bgColor = 0x05050a;
 
-  init(options: { width: number; height: number; background?: number }): void {
-    this.app = new PIXI.Application({
+  async init(options: { width: number; height: number; background?: number }): Promise<void> {
+    this.app = new PIXI.Application();
+    await this.app.init({
       width: options.width,
       height: options.height,
       backgroundColor: options.background ?? this.bgColor,
@@ -39,31 +42,73 @@ export class RenderService {
     this.resize();
   }
 
+  /** Загрузить текстуру по URL (кешируется). */
+  async loadTexture(url: string): Promise<PIXI.Texture> {
+    if (this.textures.has(url)) return this.textures.get(url)!;
+    const texture = await PIXI.Texture.from(url);
+    this.textures.set(url, texture);
+    return texture;
+  }
+
+  /** Предзагрузить список текстур. */
+  async loadTextures(urls: string[]): Promise<void> {
+    await Promise.all(urls.map((u) => this.loadTexture(u)));
+  }
+
+  getTexture(url: string): PIXI.Texture | undefined {
+    return this.textures.get(url);
+  }
+
   resize(): void {
     if (!this.app) return;
     const parent = this.app.canvas.parentElement;
     if (!parent) return;
-    (this.app.renderer as any).resize(parent.clientWidth, parent.clientHeight);
+    this.app.renderer.resize(parent.clientWidth, parent.clientHeight);
   }
 
-  addColorBlock(
+  /** Добавить спрайт сущности с текстурой. */
+  addSprite(
     entity: number,
-    width: number,
-    height: number,
-    color: number,
+    textureUrl: string,
     layer = 10,
+    animated = false,
+    frameCount = 1,
+    frameDuration = 0.1,
   ): any {
     if (!this.app) return null;
-    const graphics = new PIXI.Graphics();
-    graphics.rect(0, 0, width, height);
-    graphics.fill(color);
+
     const container = this.layers.get(layer);
-    if (container) {
-      container.addChild(graphics);
-      this.displayObjects.set(entity, graphics);
-      return graphics;
+    if (!container) return null;
+
+    let displayObject: any;
+    if (animated && frameCount > 1) {
+      const textures: PIXI.Texture[] = [];
+      for (let i = 0; i < frameCount; i++) {
+        const t = this.textures.get(`${textureUrl.replace('.png', '')}_${i}.png`);
+        textures.push(t ?? this.textures.get(textureUrl)!);
+      }
+      displayObject = new PIXI.AnimatedSprite(textures);
+      displayObject.animationSpeed = frameDuration;
+      displayObject.play();
+    } else {
+      const texture = this.textures.get(textureUrl) ?? PIXI.Texture.WHITE;
+      displayObject = new PIXI.Sprite(texture);
     }
-    return null;
+
+    container.addChild(displayObject);
+    this.displayObjects.set(entity, displayObject);
+    return displayObject;
+  }
+
+  /** Добавить спрайт из уже загруженной текстуры. */
+  addSpriteFromTexture(entity: number, texture: PIXI.Texture, layer = 10): any {
+    if (!this.app) return null;
+    const container = this.layers.get(layer);
+    if (!container) return null;
+    const sprite = new PIXI.Sprite(texture);
+    container.addChild(sprite);
+    this.displayObjects.set(entity, sprite);
+    return sprite;
   }
 
   removeSprite(entity: number): void {
@@ -86,8 +131,9 @@ export class RenderService {
 
   follow(targetX: number, targetY: number, lerp = 0.15): void {
     if (!this.camera || !this.app) return;
-    this.camera.x += (this.app.screen.width / 2 - targetX - this.camera.x) * lerp;
-    this.camera.y += (this.app.screen.height / 2 - targetY - this.camera.y) * lerp;
+    const screen = this.app.renderer.screen;
+    this.camera.x += (screen.width / 2 - targetX - this.camera.x) * lerp;
+    this.camera.y += (screen.height / 2 - targetY - this.camera.y) * lerp;
   }
 
   render(): void {
@@ -95,10 +141,24 @@ export class RenderService {
   }
 
   setBackgroundColor(color: number): void {
-    if (this.app) {
-      (this.app as any).renderer.backgroundColor = color;
-    }
     this.bgColor = color;
+    const app = this.app;
+    if (app) {
+      (app.renderer as any).background = color;
+    }
+  }
+
+  /** Задать текстуру фона (параллакс/космос). */
+  async setBackgroundTexture(url: string): Promise<void> {
+    const texture = await this.loadTexture(url);
+    const app = this.app;
+    if (app) {
+      const bg: any = new PIXI.Sprite(texture);
+      const renderer: any = app.renderer;
+      bg.scale.set(renderer.width / bg.texture.width, renderer.height / bg.texture.height);
+      this.stage?.addChildAt(bg, 0);
+      this.displayObjects.set(-1, bg);
+    }
   }
 
   destroy(): void {
@@ -108,5 +168,6 @@ export class RenderService {
     this.camera = null;
     this.layers.clear();
     this.displayObjects.clear();
+    this.textures.clear();
   }
 }

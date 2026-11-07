@@ -1,41 +1,47 @@
+/**
+ * MiningSystem — рабочая логика добычи ресурсов.
+ * Разрушение блоков по клавише E, спавн лута-спрайта, подбор в инвентарь.
+ */
+import * as PIXI from 'pixi.js';
 import { System } from '../ecs/system';
 import { World } from '../ecs/world';
 import { EventBus } from '../core/event-bus';
 import { PhysicsService } from '../services/physics-service';
-import { Vec2 } from '../core/vec2';
+import { RenderService } from '../services/render-service';
+import { InputService } from '../services/input-service';
 import { Transform } from '../components/transform';
 import { PhysicsBody } from '../components/physics-body';
 import { Renderable } from '../components/renderable';
-import { CharacterController, CharacterControllerData } from '../components/character';
-import { CharacterStats, CharacterStatsData } from '../components/character';
-import { MiningTool, MiningToolData, ToolType, Tools } from '../components/mining';
-import { Chunk, ChunkData, TileData, TileType, DEFAULT_CHUNK_CONFIG } from '../components/world';
+import { CharacterController } from '../components/character';
+import { CharacterStats } from '../components/character';
 import { Material } from '../components/material';
+import { Mineable, MineableData } from '../components/mining';
+import { ItemStack } from '../components/inventory';
+import { MiningTool, MiningToolData } from '../components/mining';
+import { InventorySystem } from './inventory-system';
 
-/**
- * MiningSystem — механика добычи ресурсов и разрушения тайлов.
- *
- * Обрабатывает урон инструментов по тайлам чанков, destrucción тайлов,
- * спавн предметов-ресурсов и запуск проверки осыпания соседних тайлов.
- *
- * Приоритет 28 — после StaminaEnergySystem (18) и CharacterSystem (12),
- * до GravitySystem (25) — чтобы урон и спавн ресурсов учитывались перед
- * применением гравитационных сил.
- */
 export class MiningSystem extends System {
   readonly priority = 28;
   readonly required = [Transform, CharacterController, CharacterStats];
 
   private worldRef!: World;
-
-  // Время с последнего удара инструмента (для соблюдения speed)
-  private lastHitTime = new Map<number, number>();
+  private inventorySystem!: InventorySystem;
+  private lastMineTime = 0;
 
   constructor(
     private physics: PhysicsService,
+    private input: InputService,
     private eventBus: EventBus,
+    inventorySystem: InventorySystem,
+    private render: RenderService,
   ) {
     super();
+    this.inventorySystem = inventorySystem;
+  }
+
+  /** Связать с экземпляром InventorySystem (вызывается из main.ts). */
+  bindInventory(inventorySystem: InventorySystem): void {
+    this.inventorySystem = inventorySystem;
   }
 
   update(world: World, dt: number): void {
@@ -43,293 +49,205 @@ export class MiningSystem extends System {
 
     const actors = world.query(Transform, CharacterController, CharacterStats);
     for (const { entity, components } of actors) {
+      const transform = components[0] as { x: number; y: number; rotation: number };
       const ctrl = components[1] as CharacterControllerData;
       const stats = components[2] as CharacterStatsData;
 
       if (ctrl.state === 'Dead') continue;
 
-      // Если не нажата кнопка взаимодействия — не добываем
-      if (!ctrl.interactPressed) continue;
+      const ePressed = this.input.isKeyDown('e');
 
-      // Находим инструмент в инвентаре (упрощённо: ищем MiningTool на ближайшем предмете)
-      // В полной реализации инвентарь предоставляет активный инструмент.
-      const tool = this.getActiveTool(entity);
+      // --- Подбор лута при удержании E ---
+      if (ePressed) {
+        this.inventorySystem.pickupNearby(transform.x, transform.y, 70);
+      }
+
+      // --- Добыча блока при удержании E ---
+      if (!ePressed) continue;
+
+      const now = Date.now();
+      const tool = this.worldRef.getComponent(entity, MiningTool as unknown as symbol) as MiningToolData | undefined;
       if (!tool) continue;
 
-      // Проверяем скорость инструмента (ударов в секунду)
-      const now = Date.now();
-      const lastHit = this.lastHitTime.get(entity) ?? 0;
       const hitInterval = 1000 / tool.speed;
-      if (now - lastHit < hitInterval) continue;
+      if (now - this.lastMineTime < hitInterval) continue;
 
-      // Тратим стамину/энергию
       const staminaCost = tool.staminaCostPerSecond * dt;
       const energyCost = tool.energyCostPerSecond * dt;
       if (stats.stamina < staminaCost || stats.energy < energyCost) continue;
 
       stats.stamina = Math.max(0, stats.stamina - staminaCost);
       stats.energy = Math.max(0, stats.energy - energyCost);
-      this.worldRef.addComponent(entity, CharacterStats as unknown as symbol, stats);
+      world.addComponent(entity, CharacterStats as unknown as symbol, stats);
 
-      // Вычисляем целевую позицию (перед игроком в направлении ввода)
-      const transform = components[0] as { x: number; y: number; rotation: number };
-      const targetPos = this.getMiningTarget(transform, ctrl, tool);
+      this.lastMineTime = now;
 
-      // Добываем тайл в целевой позиции
-      this.mineTile(entity, targetPos, tool);
+      // Целевая позиция — перед игроком
+      const dir = ctrl.inputDirection;
+      let angle = transform.rotation;
+      if (dir.x !== 0 || dir.y !== 0) {
+        angle = Math.atan2(dir.y, dir.x);
+      }
+      const distance = 80;
+      const targetX = transform.x + Math.cos(angle) * distance;
+      const targetY = transform.y + Math.sin(angle) * distance;
 
-      this.lastHitTime.set(entity, now);
+      this.mineTile(entity, targetX, targetY, tool);
     }
   }
 
-  /* ── Добыча тайла ─────────────────────────────────────────────── */
+  private mineTile(minerEntity: number, worldX: number, worldY: number, tool: MiningToolData): void {
+    // Находим тела в точке удара
+    const bodies = this.physics.queryPoint(worldX, worldY);
+    let target: { entity: number; dist: number } | null = null;
 
-  private mineTile(minerEntity: number, worldPos: Vec2, tool: MiningToolData): void {
-    // Находим чанк, содержащий эту позицию
-    const chunkEntity = this.findChunkAt(worldPos);
-    if (chunkEntity === -1) return;
+    for (const body of bodies) {
+      const targetEntity = (body as any).entity;
+      if (targetEntity === minerEntity) continue;
 
-    const chunk = this.worldRef.getComponent(chunkEntity, Chunk as unknown as symbol) as ChunkData | undefined;
-    if (!chunk || !chunk.loaded) return;
+      const material = this.worldRef.getComponent(targetEntity, Material as unknown as symbol) as { mass: number } | undefined;
+      if (!material) continue;
 
-    // Переводим мировые координаты в локальные координаты тайла внутри чанка
-    const chunkPos = this.worldRef.getComponent(chunkEntity, Transform as unknown as symbol) as { x: number; y: number } | undefined;
-    if (!chunkPos) return;
+      const tTransform = this.worldRef.getComponent(targetEntity, Transform as unknown as symbol) as { x: number; y: number } | undefined;
+      if (!tTransform) continue;
 
-    const tileX = Math.floor((worldPos.x - chunkPos.x) / chunk.tileSize);
-    const tileY = Math.floor((worldPos.y - chunkPos.y) / chunk.tileSize);
+      const dist = Math.hypot(worldX - tTransform.x, worldY - tTransform.y);
+      if (dist > 80) continue;
 
-    if (tileX < 0 || tileX >= chunk.width || tileY < 0 || tileY >= chunk.height) return;
-
-    const tileIndex = tileY * chunk.width + tileX;
-    const tile = chunk.tiles[tileIndex];
-    if (!tile || tile.type === 'air') return;
-
-    // Проверяем, может ли инструмент добывать этот тип тайла
-    if (!tool.canMine(tile.type)) return;
-
-    // Эффективность инструмента по материалу
-    const effectiveness = tool.materialEffectiveness[tile.type] ?? 1.0;
-    const damage = tool.damage * effectiveness;
-
-    // Наносим урон
-    tile.health = Math.max(0, tile.health - damage);
-    chunk.tiles[tileIndex] = tile;
-    this.worldRef.addComponent(chunkEntity, Chunk as unknown as symbol, chunk);
-
-    this.eventBus.emit('tile:damaged', {
-      chunkEntity,
-      tileX,
-      tileY,
-      tileType: tile.type,
-      health: tile.health,
-      maxHealth: tile.maxHealth,
-      damage,
-    });
-
-    // Если тайл destroyed — удаляем его и спавним ресурс
-    if (tile.health <= 0) {
-      this.destroyTile(chunkEntity, chunk, tileX, tileY, tile, tool);
-    }
-  }
-
-  private destroyTile(
-    chunkEntity: number,
-    chunk: ChunkData,
-    tileX: number,
-    tileY: number,
-    tile: TileData,
-    tool: MiningToolData,
-  ): void {
-    const tileIndex = tileY * chunk.width + tileX;
-
-    // 1. Удаляем тайл из чанка (становится воздухом)
-    chunk.tiles[tileIndex] = {
-      ...tile,
-      type: 'air',
-      health: 0,
-      resourceDrop: null,
-      dropAmount: 0,
-    };
-    this.worldRef.addComponent(chunkEntity, Chunk as unknown as symbol, chunk);
-
-    // 2. Спавним предмет-ресурс в мире (если есть дроп)
-    if (tile.resourceDrop && tile.dropAmount > 0) {
-      const chunkPos = this.worldRef.getComponent(chunkEntity, Transform as unknown as symbol) as { x: number; y: number } | undefined;
-      if (chunkPos) {
-        const dropAmount = Math.floor(tile.dropAmount * tool.fortune);
-        const spawnX = chunkPos.x + (tileX + 0.5) * chunk.tileSize;
-        const spawnY = chunkPos.y + (tileY + 0.5) * chunk.tileSize;
-        this.spawnResourceItem(tile.resourceDrop, dropAmount, spawnX, spawnY);
+      if (!target || dist < target.dist) {
+        target = { entity: targetEntity, dist };
       }
     }
 
-    // 3. Проверяем осыпание соседних тайлов (физика обрушения)
-    this.checkSupport(chunkEntity, chunk, tileX, tileY);
+    if (!target) return;
 
-    // 4. Событие уничтожения тайла (звук, частицы, сохранение)
+    // Наносим урон блоку (если есть Mineable компонент)
+    const mineable = this.worldRef.getComponent(target.entity, Mineable as unknown as symbol) as MineableData | undefined;
+
+    if (mineable) {
+      const effectiveness = tool.materialEffectiveness[mineable.tileType] ?? 1.0;
+      const damage = tool.damage * effectiveness;
+      mineable.health = Math.max(0, mineable.health - damage);
+
+      this.eventBus.emit('tile:damaged', { entity: target.entity, health: mineable.health, maxHealth: mineable.maxHealth, damage });
+
+      if (mineable.health <= 0) {
+        this.destroyTile(target.entity, mineable, tool);
+      }
+    } else {
+      // Обычный блок без Mineable — ломается за один удар
+      this.destroyTile(target.entity, {
+        tileType: 'stone',
+        health: 0, maxHealth: 0,
+        resourceDrop: 'stone_slabs',
+        dropAmount: 1,
+        defaultEffectiveness: {},
+      } as MineableData, tool);
+    }
+  }
+
+  private destroyTile(entity: number, mineable: MineableData, tool: MiningToolData): void {
+    const transform = this.worldRef.getComponent(entity, Transform as unknown as symbol) as { x: number; y: number } | undefined;
+    if (!transform) return;
+
+    // Удаляем из физики, рендера и мира
+    this.physics.removeBody(entity);
+    this.render.removeSprite(entity);
+    this.worldRef.destroyEntity(entity);
+
+    // Спавним лут-спрайт
+    if (mineable.resourceDrop && mineable.dropAmount > 0) {
+      const dropAmount = Math.floor(mineable.dropAmount * tool.fortune);
+      this.spawnLoot(mineable.resourceDrop, dropAmount, transform.x, transform.y);
+    }
+
     this.eventBus.emit('tile:destroyed', {
-      chunkEntity,
-      tileX,
-      tileY,
-      tileType: tile.type,
-      resourceDrop: tile.resourceDrop,
-      dropAmount: tile.dropAmount,
+      entity, resourceDrop: mineable.resourceDrop, dropAmount: mineable.dropAmount, x: transform.x, y: transform.y,
     });
   }
 
-  /* ── Физика опоры и осыпания ────────────────────────────────── */
+  private spawnLoot(itemId: string, amount: number, x: number, y: number): void {
+    const lootEntity = this.worldRef.createEntity();
+    this.worldRef.addComponent(lootEntity, Transform as unknown as symbol, { x, y, rotation: 0, scaleX: 1, scaleY: 1 });
 
-  /**
-   * Проверяет_support для тайла и его соседей после разрушения.
-   * Если тайл с supportRequired теряет опору снизу — становится debris (падает).
-   */
-  private checkSupport(chunkEntity: number, chunk: ChunkData, destroyedX: number, destroyedY: number): void {
-    // Проверяем тайлы над разрушенным и по бокам (они могли опираться на destroyed)
-    const neighbors = [
-      { x: destroyedX, y: destroyedY - 1 }, // над destroyed
-      { x: destroyedX - 1, y: destroyedY }, // слева
-      { x: destroyedX + 1, y: destroyedY }, // справа
-      { x: destroyedX - 1, y: destroyedY - 1 }, // лево-вверх
-      { x: destroyedX + 1, y: destroyedY - 1 }, // право-вверх
-    ];
+    // Физическое тело лута (круг, небольшой, отскакивает)
+    const body = this.physics.createCircleBody(lootEntity, x, y, 10, {
+      restitution: 0.3, friction: 0.5, density: 0.5, label: 'loot',
+    });
+    this.worldRef.addComponent(lootEntity, PhysicsBody as unknown as symbol, {
+      body, gravityScale: 1.0, isSleeping: false,
+    });
 
-    for (const { x, y } of neighbors) {
-      if (x < 0 || x >= chunk.width || y < 0 || y >= chunk.height) continue;
-      const index = y * chunk.width + x;
-      const tile = chunk.tiles[index];
-      if (!tile || tile.type === 'air') continue;
-
-      if (tile.supportRequired && !this.hasSupport(chunk, x, y)) {
-        if (tile.fallWhenUnsupported) {
-          this.makeTileDebris(chunkEntity, chunk, x, y, tile);
-        }
-      }
+    // Спрайт лута (только текстура, без Graphics)
+    const textureUrl = this.getItemTexture(itemId);
+    const lootSprite = this.render.addSprite(lootEntity, textureUrl, 15);
+    if (lootSprite) {
+      lootSprite.anchor.set(0.5, 0.5);
+      lootSprite.width = 24;
+      lootSprite.height = 24;
     }
-  }
 
-  private hasSupport(chunk: ChunkData, x: number, y: number): boolean {
-    // Оpora снизу — тайл под текущим или земля/строительство
-    if (y + 1 >= chunk.height) return true; // край чанка — считаем есть опора (границы мира)
-    const below = chunk.tiles[(y + 1) * chunk.width + x];
-    if (!below) return false;
-    if (below.type === ('air' as TileType)) return false;
-    // Твёрдые блоки дают опору
-    return below.type !== ('air' as TileType) && below.type !== ('debris' as TileType);
-  }
-
-  private makeTileDebris(chunkEntity: number, chunk: ChunkData, x: number, y: number, tile: TileData): void {
-    const chunkPos = this.worldRef.getComponent(chunkEntity, Transform as unknown as symbol) as { x: number; y: number } | undefined;
-    if (!chunkPos) return;
-
-    const index = y * chunk.width + x;
-    chunk.tiles[index] = { ...tile, type: 'air', health: 0, resourceDrop: null, dropAmount: 0 };
-    this.worldRef.addComponent(chunkEntity, Chunk as unknown as symbol, chunk);
-
-    const spawnX = chunkPos.x + (x + 0.5) * chunk.tileSize;
-    const spawnY = chunkPos.y + (y + 0.5) * chunk.tileSize;
-
-    // Создаём физический обломок (debris) как отдельную ECS-сущность
-    const debrisEntity = this.worldRef.createEntity();
-    this.worldRef.addComponent(debrisEntity, Transform as unknown as symbol, {
-      x: spawnX,
-      y: spawnY,
-      rotation: 0,
-      scaleX: 1,
-      scaleY: 1,
+    this.worldRef.addComponent(lootEntity, Renderable as unknown as symbol, {
+      texture: textureUrl, tint: 0xffffff, alpha: 1, visible: true, layer: 15,
     });
-    this.worldRef.addComponent(debrisEntity, PhysicsBody as unknown as symbol, {
-      body: null, // будет инициализирован PhysicsService
-      gravityScale: 1.0,
-      isSleeping: false,
-    });
-    this.worldRef.addComponent(debrisEntity, Renderable as unknown as symbol, {
-      texture: `debris_${tile.type}`,
-      tint: 0xffffff,
-      alpha: 1,
-      visible: true,
-      layer: 10,
-    });
-    this.worldRef.addComponent(debrisEntity, Material as unknown as symbol, {
-      mass: tile.hardness * 5,
-      density: 1000,
-      strength: 1000,
-      durability: 1,
-      sailArea: 0.1,
-      airResistance: 0.5,
-      state: 'solid',
-      temperature: 20,
-      burnable: false,
-      flammable: false,
-      thermalConductivity: 0.5,
-    });
-
-    this.eventBus.emit('tile:became-debris', { entity: debrisEntity, tileType: tile.type, x: spawnX, y: spawnY });
-  }
-
-  /* ── Вспомогательное ─────────────────────────────────────────── */
-
-  private getActiveTool(_entity: number): MiningToolData | null {
-    // В упрощённой модели возвращаем кирку камня как инструмент по умолчанию.
-    // В полной реализации — активный предмет из инвентаря.
-    return Tools.stone_pickaxe();
-  }
-
-  private getMiningTarget(
-    transform: { x: number; y: number; rotation: number },
-    ctrl: CharacterControllerData,
-    _tool: MiningToolData,
-  ): Vec2 {
-    // Цель — перед игроком в направлении ввода (или взгляда, если ввод нулевой)
-    const dir = ctrl.inputDirection;
-    let angle = transform.rotation;
-    if (dir.x !== 0 || dir.y !== 0) {
-      angle = Math.atan2(dir.y, dir.x);
-    }
-    const distance = 60; // радиус добычи в пикселях
-    return new Vec2(
-      transform.x + Math.cos(angle) * distance,
-      transform.y + Math.sin(angle) * distance,
-    );
-  }
-
-  private findChunkAt(worldPos: Vec2): number {
-    const chunks = this.worldRef.query(Chunk, Transform);
-    const tileSize = DEFAULT_CHUNK_CONFIG.tileSize;
-    const chunkWidth = DEFAULT_CHUNK_CONFIG.width;
-    const chunkHeight = DEFAULT_CHUNK_CONFIG.height;
-
-    for (const { entity, components } of chunks) {
-      const chunk = components[0] as ChunkData;
-      const transform = components[1] as { x: number; y: number };
-      const chunkX = Math.floor(worldPos.x / (chunkWidth * tileSize));
-      const chunkY = Math.floor(worldPos.y / (chunkHeight * tileSize));
-      if (chunk.chunkX === chunkX && chunk.chunkY === chunkY) {
-        return entity;
-      }
-    }
-    return -1;
-  }
-
-  private spawnResourceItem(itemId: string, amount: number, x: number, y: number): void {
-    const entity = this.worldRef.createEntity();
-    this.worldRef.addComponent(entity, Transform as unknown as symbol, { x, y, rotation: 0, scaleX: 1, scaleY: 1 });
-    this.worldRef.addComponent(entity, PhysicsBody as unknown as symbol, {
-      body: null, gravityScale: 1.0, isSleeping: false,
-    });
-    this.worldRef.addComponent(entity, Renderable as unknown as symbol, {
-      texture: `item_${itemId}`,
-      tint: 0xffffff,
-      alpha: 1,
-      visible: true,
-      layer: 15,
-    });
-    this.worldRef.addComponent(entity, Material as unknown as symbol, {
+    this.worldRef.addComponent(lootEntity, Material as unknown as symbol, {
       mass: 1, density: 500, strength: 100, durability: 1,
       sailArea: 0.05, airResistance: 0.8, state: 'solid',
       temperature: 20, burnable: false, flammable: false, thermalConductivity: 0.2,
     });
-    // ItemStack — добавляется в InventorySystem при подборе
-    this.eventBus.emit('resource:spawned', { entity, itemId, amount, x, y });
+    this.worldRef.addComponent(lootEntity, ItemStack as unknown as symbol, {
+      itemId, count: amount, maxCount: 64, tags: [],
+    });
+
+    this.eventBus.emit('resource:spawned', { entity: lootEntity, itemId, amount, x, y });
   }
+
+  private getItemTexture(itemId: string): string {
+    const map: Record<string, string> = {
+      stone_slabs: 'src/assets/textures/item_stone_slabs.png',
+      ferrite_ore: 'src/assets/textures/item_ferrite_ore.png',
+      resonit: 'src/assets/textures/item_resonit.png',
+      biovolume: 'src/assets/textures/item_biovolume.png',
+      biogel: 'src/assets/textures/item_biogel.png',
+      ancient_fragment: 'src/assets/textures/item_ancient_fragment.png',
+    };
+    return map[itemId] ?? 'src/assets/textures/item_stone_slabs.png';
+  }
+}
+
+/* ── Локальные типы для компонентов (альясы для читаемости) ── */
+
+interface CharacterControllerData {
+  state: string;
+  previousState: string;
+  stateTime: number;
+  inputDirection: { x: number; y: number };
+  isSprinting: boolean;
+  jumpPressed: boolean;
+  interactPressed: boolean;
+  digPressed: boolean;
+  scanPressed: boolean;
+  groundNormal: { x: number; y: number } | null;
+  groundEntity: number | null;
+  carriedEntity: number | null;
+  maxCarryMass: number;
+  grabRadius: number;
+  jumpForce: number;
+  moveSpeed: number;
+  sprintMultiplier: number;
+  canDoubleJump: boolean;
+  hasDoubleJumped: boolean;
+}
+
+interface CharacterStatsData {
+  health: number;
+  maxHealth: number;
+  stamina: number;
+  maxStamina: number;
+  energy: number;
+  maxEnergy: number;
+  equipmentCondition: number;
+  speedPenalty: number;
+  exhausted: boolean;
+  lastMealTime: number | null;
 }

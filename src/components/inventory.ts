@@ -1,35 +1,26 @@
 import { defineComponent } from '../ecs/component';
 import { Vec2 } from '../core/vec2';
 
-/**
- * Стек предмета в ячейке инвентаря.
- */
 export const ItemStack = defineComponent<ItemStackData>('ItemStack');
 
 export interface ItemStackData {
-  itemId: string;          // ID предмета (stone_slabs, ferrite_ore, resonit, ...)
-  count: number;           // количество в стаке
-  maxCount: number;        // максимум в стаке (зависит от предмета)
-  quality?: number;        // качество/прочность (0..1, для инструментов и оборудования)
-  tags: string[];          // теги (ore, building_material, food, tool, device, ...)
+  itemId: string;
+  count: number;
+  maxCount: number;
+  quality?: number;
+  tags: string[];
 }
 
-/**
- * Инвентарь сущности (игрок, хранилище, дрон, верстак).
- * Слотовая система: каждый индекс в массиве — отдельная ячейка.
- */
 export const Inventory = defineComponent<InventoryData>('Inventory');
 
 export interface InventoryData {
-  slots: (ItemStackData | null)[]; // ячейки, null = пустая
-  maxSlots: number;                // размер инвентаря
-  maxWeight: number;               // максимальный переносимый вес (кг)
-  currentWeight: number;           // текущий вес (вычисляется системами)
+  slots: (ItemStackData | null)[];
+  maxSlots: number;
+  maxWeight: number;
+  currentWeight: number;
+  open: boolean;
 }
 
-/**
- * Экипировка персонажа (отдельные слоты для одежды и инструментов).
- */
 export const Equipment = defineComponent<EquipmentData>('Equipment');
 
 export interface EquipmentData {
@@ -37,13 +28,10 @@ export interface EquipmentData {
   chest: ItemStackData | null;
   hands: ItemStackData | null;
   legs: ItemStackData | null;
-  tool: ItemStackData | null;    // активный инструмент добычи
-  backpack: ItemStackData | null; // бонус к maxSlots / maxWeight
+  tool: ItemStackData | null;
+  backpack: ItemStackData | null;
 }
 
-/**
- * Чертеж/технология, открытый игроком.
- */
 export const UnlockedBlueprint = defineComponent<UnlockedBlueprintData>('UnlockedBlueprint');
 
 export interface UnlockedBlueprintData {
@@ -51,21 +39,15 @@ export interface UnlockedBlueprintData {
   unlockedAt: number;
 }
 
-/**
- * Очередь крафта — рецепт в процессе изготовления.
- */
 export const CraftingQueue = defineComponent<CraftingQueueData>('CraftingQueue');
 
 export interface CraftingQueueData {
   recipeId: string;
-  progress: number;      // 0 … 1
+  progress: number;
   startTime: number;
   stationEntity: number | null;
 }
 
-/**
- * Рецепт крафта (данные, регистрируются плагинами предметов).
- */
 export const CraftingRecipe = defineComponent<CraftingRecipeData>('CraftingRecipe');
 
 export interface CraftingRecipeData {
@@ -73,18 +55,15 @@ export interface CraftingRecipeData {
   name: string;
   description: string;
   inputs: Array<{ itemId: string; count: number }>;
-  energyCost: number;    // затрата энергии на крафт (ЕД)
-  craftTime: number;     // время крафта (секунды)
+  energyCost: number;
+  craftTime: number;
   outputs: Array<{ itemId: string; count: number }>;
-  unlockBlueprints: string[]; // необходимые чертежи
-  unlockTechnologies: string[]; // необходимые технологии
-  station?: string;      // требуемая станция крафта
-  tags: string[];        // теги рецепта (building, device, tool, ...)
+  unlockBlueprints: string[];
+  unlockTechnologies: string[];
+  station?: string;
+  tags: string[];
 }
 
-/**
- * Предопределённые максимальные размеры стаков по типам предметов.
- */
 export const StackLimits: Record<string, number> = {
   default: 64,
   ore: 256,
