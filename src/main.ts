@@ -320,39 +320,93 @@ async function bootstrap(): Promise<void> {
   input.bindAction('jump', ' ');
   input.bindAction('interact', 'e');
 
-  // Инвентарь по клавише I
+  // Инвентарь по клавишам I или Tab
+  function toggleInventory(): void {
+    const inv = world.getComponent(player, Inventory as unknown as symbol) as { open: boolean };
+    if (inv) {
+      inv.open = !inv.open;
+      world.addComponent(player, Inventory as unknown as symbol, inv);
+    }
+  }
+
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'i' || e.key === 'I') {
-      const inv = world.getComponent(player, Inventory as unknown as symbol) as { open: boolean };
-      if (inv) {
-        inv.open = !inv.open;
-        world.addComponent(player, Inventory as unknown as symbol, inv);
-      }
+    if (e.key === 'i' || e.key === 'I' || e.key === 'Tab') {
+      if (e.key === 'Tab') e.preventDefault();
+      toggleInventory();
     }
   });
 
-  // HUD обновление
-  const hpEl = document.getElementById('hp');
-  const enEl = document.getElementById('en');
-  const stEl = document.getElementById('st');
-  const tideEl = document.getElementById('tide');
+  // HUD обновление — стилизованные элементы
+  const hpValEl = document.getElementById('hp-val');
+  const hpBarEl = document.getElementById('hp-bar');
+  const hpPanelEl = document.getElementById('hp-panel');
+  const enValEl = document.getElementById('en-val');
+  const enBarEl = document.getElementById('en-bar');
+  const enPanelEl = document.getElementById('en-panel');
+  const stValEl = document.getElementById('st-val');
+  const stBarEl = document.getElementById('st-bar');
+  const stPanelEl = document.getElementById('st-panel');
+  const tideValEl = document.getElementById('tide-val');
+
+  const toastEl = document.getElementById('pickup-toast');
+  let toastTimeout: number | null = null;
+
+  function showPickupToast(itemId: string, count: number): void {
+    if (!toastEl) return;
+    toastEl.style.display = 'block';
+    toastEl.innerHTML = `
+      <div class="toast-item">+${count} ${itemId.replace(/_/g, ' ')}</div>
+    `;
+    if (toastTimeout !== null) clearTimeout(toastTimeout);
+    toastTimeout = window.setTimeout(() => {
+      toastEl.style.display = 'none';
+      toastTimeout = null;
+    }, 2500);
+  }
 
   function updateHUD(): void {
     const stats = world.getComponent(player, CharacterStats as unknown as symbol) as {
       health: number; maxHealth: number;
       stamina: number; maxStamina: number;
       energy: number; maxEnergy: number;
+      exhausted: boolean;
     } | undefined;
     if (stats) {
-      if (hpEl) hpEl.textContent = Math.floor(stats.health).toString();
-      if (enEl) enEl.textContent = Math.floor(stats.energy).toString();
-      if (stEl) stEl.textContent = Math.floor(stats.stamina).toString();
+      // Здоровье
+      const hpPct = Math.floor((stats.health / stats.maxHealth) * 100);
+      if (hpValEl) hpValEl.textContent = Math.floor(stats.health).toString();
+      if (hpBarEl) hpBarEl.style.width = `${hpPct}%`;
+      if (hpPanelEl) {
+        hpPanelEl.className = 'stat-panel' + (hpPct < 25 ? ' danger' : hpPct < 50 ? ' warn' : '');
+        if (hpBarEl) hpBarEl.className = 'stat-fill' + (hpPct < 25 ? ' danger' : hpPct < 50 ? ' warn' : '');
+      }
+      // Энергия
+      const enPct = Math.floor((stats.energy / stats.maxEnergy) * 100);
+      if (enValEl) enValEl.textContent = Math.floor(stats.energy).toString();
+      if (enBarEl) enBarEl.style.width = `${enPct}%`;
+      if (enPanelEl) {
+        enPanelEl.className = 'stat-panel' + (enPct < 25 ? ' danger' : enPct < 50 ? ' warn' : '');
+        if (enBarEl) enBarEl.className = 'stat-fill' + (enPct < 25 ? ' danger' : enPct < 50 ? ' warn' : '');
+      }
+      // Выносливость
+      const stPct = Math.floor((stats.stamina / stats.maxStamina) * 100);
+      if (stValEl) stValEl.textContent = Math.floor(stats.stamina).toString();
+      if (stBarEl) stBarEl.style.width = `${stPct}%`;
+      if (stPanelEl) {
+        stPanelEl.className = 'stat-panel' + (stats.exhausted ? ' danger' : stPct < 25 ? ' warn' : '');
+        if (stBarEl) stBarEl.className = 'stat-fill' + (stats.exhausted ? ' danger' : stPct < 25 ? ' warn' : '');
+      }
     }
-    if (tideEl) tideEl.textContent = 'Стабильность';
+    if (tideValEl) tideValEl.textContent = 'Стабильность';
   }
 
   setInterval(updateHUD, 100);
   updateHUD();
+
+  // Слушаем события подбора предмета для тоста
+  eventBus.on('inventory:item-picked-up', (e: any) => {
+    showPickupToast(e.itemId, e.count);
+  });
 }
 
 bootstrap().catch((err) => {
