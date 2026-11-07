@@ -301,6 +301,8 @@ export class InventorySystem extends System {
       biovolume: 'src/assets/textures/item_biovolume.png',
       biogel: 'src/assets/textures/item_biogel.png',
       ancient_fragment: 'src/assets/textures/item_ancient_fragment.png',
+      stone_wall: 'src/assets/textures/block_stone_wall.png',
+      gravity_anchor: 'src/assets/textures/gravity_anchor.png',
     };
     return map[itemId] ?? 'src/assets/textures/item_stone_slabs.png';
   }

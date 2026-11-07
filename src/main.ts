@@ -36,6 +36,7 @@ import { RenderSystem } from './systems/render-system';
 import { InventorySystem } from './systems/inventory-system';
 import { MiningSystem } from './systems/mining-system';
 import { PlayerAnimationSystem } from './systems/player-animation-system';
+import { CraftingSystem } from './systems/crafting-system';
 
 import { Vec2 } from './core/vec2';
 
@@ -380,6 +381,8 @@ async function bootstrap(): Promise<void> {
   const miningSystem = new MiningSystem(physics, input, eventBus, inventorySystem, render);
   const playerAnimationSystem = new PlayerAnimationSystem(render);
   playerAnimationSystem.setPlayerEntity(player, PLAYER_IDLE_FRAMES, PLAYER_WALK_FRAMES, [TEX.playerJump]);
+  const craftingSystem = new CraftingSystem(eventBus, render);
+  craftingSystem.setPlayerEntity(player);
 
   world.addSystem(new InputSystem(input, eventBus));           // 10
   world.addSystem(new CharacterSystem(eventBus));              // 12
@@ -388,6 +391,7 @@ async function bootstrap(): Promise<void> {
   world.addSystem(miningSystem);                               // 28 (добыча перед физикой)
   world.addSystem(new PhysicsSystem(physics, eventBus));       // 30
   world.addSystem(playerAnimationSystem);                      // 35 (анимация игрока)
+  world.addSystem(craftingSystem);                             // 45 (крафт)
   world.addSystem(inventorySystem);                            // 50 (инвентарь)
   const renderSystem = new RenderSystem(render, physics);      // 40 (отрисовка после физики)
   world.addSystem(renderSystem);
@@ -445,6 +449,9 @@ async function bootstrap(): Promise<void> {
     if (e.key === 'i' || e.key === 'I' || e.key === 'Tab') {
       if (e.key === 'Tab') e.preventDefault();
       toggleInventory();
+    }
+    if (e.key === 'c' || e.key === 'C') {
+      craftingSystem.toggle();
     }
   });
 

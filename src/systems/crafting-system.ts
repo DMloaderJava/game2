@@ -1,223 +1,410 @@
+/**
+ * CraftingSystem — система крафта с PixiJS UI.
+ * Проверка ресурсов в инвентаре, списание, создание предмета.
+ */
+import * as PIXI from 'pixi.js';
 import { System } from '../ecs/system';
 import { World } from '../ecs/world';
 import { EventBus } from '../core/event-bus';
-import { CharacterStats } from '../components/character';
+import { RenderService } from '../services/render-service';
 import { Inventory, InventoryData } from '../components/inventory';
-import { ItemStack, ItemStackData, StackLimits } from '../components/inventory';
-import { CraftingRecipe, CraftingRecipeData } from '../components/inventory';
-import { CraftingQueue, CraftingQueueData } from '../components/inventory';
-import { UnlockedBlueprint } from '../components/inventory';
+import { ItemStack } from '../components/inventory';
+import { CharacterController } from '../components/character';
+import { Transform } from '../components/transform';
 
-/**
- * CraftingSystem — рецепты крафта, проверка разблокировки, процесс изготовления.
- *
- * Рецепты регистрируются плагинами предметов через registerRecipe и добавляются
- * в мир как отдельные сущности с компонентом CraftingRecipe.
- *
- * Приоритет 52 — после InventorySystem (50), чтобы инвентарь был актуален
- * при проверке ингредиентов.
- */
+/** Рецепт крафта. */
+export interface CraftingRecipeData {
+  id: string;
+  name: string;
+  inputs: Array<{ itemId: string; count: number }>;
+  output: { itemId: string; count: number };
+  unlockAt: string | null; // ID предмета, который нужно иметь для разблокировки
+}
+
+export const CRAFTING_RECIPES: CraftingRecipeData[] = [
+  {
+    id: 'stone_wall',
+    name: 'Каменная стена',
+    inputs: [{ itemId: 'stone_slabs', count: 2 }],
+    output: { itemId: 'stone_wall', count: 1 },
+    unlockAt: null,
+  },
+  {
+    id: 'gravity_anchor',
+    name: 'Гравитационный якорь',
+    inputs: [
+      { itemId: 'stone_slabs', count: 5 },
+      { itemId: 'ferrite_ore', count: 2 },
+    ],
+    output: { itemId: 'gravity_anchor', count: 1 },
+    unlockAt: null,
+  },
+];
+
+/** Текстуры для предметов крафта. */
+const CRAFT_ITEM_TEXTURES: Record<string, string> = {
+  stone_slabs: 'src/assets/textures/item_stone_slabs.png',
+  ferrite_ore: 'src/assets/textures/item_ferrite_ore.png',
+  stone_wall: 'src/assets/textures/block_stone_wall.png',
+  gravity_anchor: 'src/assets/textures/gravity_anchor.png',
+};
+
 export class CraftingSystem extends System {
-  readonly priority = 52;
-  readonly required = [CharacterStats, Inventory];
+  readonly priority = 45;
+  readonly required = [Inventory];
 
   private worldRef!: World;
-  private recipes = new Map<string, CraftingRecipeData>();
+  private playerEntity: number | null = null;
+  private uiContainer: any = null;
+  private visible = false;
+  private selectedRecipe: string | null = null;
+  private recipeButtons: Array<{ bg: any; title: any; icon: any; reqText: any; recipeId: string }> = [];
+  private craftBtn: any = null;
+  private craftBtnText: any = null;
 
-  constructor(private eventBus: EventBus) {
+  constructor(private eventBus: EventBus, private render: RenderService) {
     super();
+    this.buildUI();
+  }
+
+  private buildUI(): void {
+    // Контейнер меню крафта (скрыт по умолчанию)
+    this.uiContainer = new PIXI.Container();
+    this.uiContainer.visible = false;
+    this.uiContainer.x = 500;
+    this.uiContainer.y = 100;
+
+    // Фон меню
+    const bg = new PIXI.Graphics();
+    bg.rect(0, 0, 380, 460);
+    bg.fill(0x1a1a2e);
+    bg.stroke({ width: 3, color: 0x4cc9f0 });
+    this.uiContainer.addChild(bg);
+
+    // Заголовок
+    const title = new PIXI.Text('КРАФТ (C)', {
+      fontFamily: 'monospace',
+      fontSize: 20,
+      fill: 0x4cc9f0,
+    });
+    title.x = 10;
+    title.y = 10;
+    this.uiContainer.addChild(title);
+
+    // Кнопка закрытия
+    const closeBtn = new PIXI.Graphics();
+    closeBtn.rect(0, 0, 24, 24);
+    closeBtn.fill(0x4cc9f0);
+    closeBtn.x = 346;
+    closeBtn.y = 10;
+    closeBtn.cursor = 'pointer';
+    closeBtn.interactive = true;
+    closeBtn.on('pointerdown', () => {
+      this.visible = false;
+      this.uiContainer.visible = false;
+    });
+    this.uiContainer.addChild(closeBtn);
+
+    const closeLabel = new PIXI.Text('×', {
+      fontFamily: 'monospace',
+      fontSize: 18,
+      fill: 0x1a1a2e,
+    });
+    closeLabel.x = 352;
+    closeLabel.y = 10;
+    this.uiContainer.addChild(closeLabel);
+
+    // Список рецептов (прокручиваемая область)
+    const listY = 50;
+    const listHeight = 320;
+
+    CRAFTING_RECIPES.forEach((recipe, i) => {
+      const y = listY + i * 78;
+
+      // Фон слота рецепта
+      const slotBg = new PIXI.Graphics();
+      slotBg.rect(0, 0, 360, 70);
+      slotBg.fill(0x2a2a3e);
+      slotBg.stroke({ width: 1, color: 0x3a3a5e });
+      slotBg.x = 10;
+      slotBg.y = y;
+      slotBg.cursor = 'pointer';
+      slotBg.interactive = true;
+      slotBg.on('pointerdown', () => {
+        this.selectedRecipe = recipe.id;
+        this.updateCraftButton();
+      });
+      this.uiContainer.addChild(slotBg);
+
+      // Иконка результата
+      const icon = new PIXI.Graphics();
+      icon.rect(0, 0, 48, 48);
+      icon.fill(0x3a3a5e);
+      icon.x = 18;
+      icon.y = y + 11;
+      this.uiContainer.addChild(icon);
+
+      // Название рецепта
+      const titleText = new PIXI.Text(recipe.name, {
+        fontFamily: 'monospace',
+        fontSize: 14,
+        fill: 0xe8e8f0,
+      });
+      titleText.x = 76;
+      titleText.y = y + 14;
+      this.uiContainer.addChild(titleText);
+
+      // Требования ресурсов
+      const reqText = new PIXI.Text('', {
+        fontFamily: 'monospace',
+        fontSize: 11,
+        fill: 0x8a8aa0,
+      });
+      reqText.x = 76;
+      reqText.y = y + 34;
+      this.uiContainer.addChild(reqText);
+
+      this.recipeButtons.push({
+        bg: slotBg,
+        title: titleText,
+        icon,
+        reqText,
+        recipeId: recipe.id,
+      });
+    });
+
+    // Кнопка крафта
+    this.craftBtn = new PIXI.Graphics();
+    this.craftBtn.rect(0, 0, 360, 44);
+    this.craftBtn.fill(0x4cc9f0);
+    this.craftBtn.x = 10;
+    this.craftBtn.y = listY + CRAFTING_RECIPES.length * 78 + 10;
+    this.craftBtn.cursor = 'pointer';
+    this.craftBtn.interactive = true;
+    this.craftBtn.on('pointerdown', () => {
+      if (this.selectedRecipe) {
+        this.craft(this.selectedRecipe);
+      }
+    });
+    this.uiContainer.addChild(this.craftBtn);
+
+    this.craftBtnText = new PIXI.Text('Скрафтить', {
+      fontFamily: 'monospace',
+      fontSize: 16,
+      fill: 0x1a1a2e,
+      fontWeight: 'bold',
+    });
+    this.craftBtnText.x = 160 - this.craftBtnText.width / 2;
+    this.craftBtnText.y = this.craftBtn.y + 12;
+    this.uiContainer.addChild(this.craftBtnText);
+
+    // Подсказка Resources
+    const hint = new PIXI.Text('Требуемые ресурсы:', {
+      fontFamily: 'monospace',
+      fontSize: 10,
+      fill: 0x6a6a8a,
+    });
+    hint.x = 10;
+    hint.y = this.craftBtn.y + 58;
+    this.uiContainer.addChild(hint);
+
+    if (this.render.stage) {
+      this.render.stage.addChild(this.uiContainer);
+    }
   }
 
   update(world: World, dt: number): void {
     this.worldRef = world;
 
-    // Пересобираем кэш рецептов
-    this.recipes.clear();
-    const recipeEntities = world.query(CraftingRecipe);
-    for (const { components } of recipeEntities) {
-      const recipe = components[0] as CraftingRecipeData;
-      this.recipes.set(recipe.id, recipe);
-    }
-
-    const actors = world.query(CharacterStats, Inventory, CraftingQueue);
-    for (const { entity, components } of actors) {
-      const stats = components[0] as CharacterStatsData;
-      const inv = components[1] as InventoryData;
-      const queue = components[2] as CraftingQueueData;
-
-      if (queue.progress >= 1) {
-        this.completeCraft(entity, inv, queue);
-        world.removeComponent(entity, CraftingQueue as unknown as symbol);
-        continue;
+    const inventories = world.query(Inventory);
+    for (const { entity, components } of inventories) {
+      const isPlayer = world.hasComponent(entity, CharacterController as unknown as symbol);
+      if (isPlayer) {
+        this.playerEntity = entity;
+        // Обновляем отображение требований для каждого рецепта
+        this.updateRecipeRequirements(entity);
       }
+    }
+  }
 
-      const recipe = this.recipes.get(queue.recipeId);
+  private updateRecipeRequirements(entity: number): void {
+    const inv = this.worldRef.getComponent(entity, Inventory as unknown as symbol) as InventoryData | undefined;
+    if (!inv) return;
+
+    for (const btn of this.recipeButtons) {
+      const recipe = CRAFTING_RECIPES.find((r) => r.id === btn.recipeId);
       if (!recipe) continue;
 
-      const energyCostPerSecond = recipe.energyCost / recipe.craftTime;
-      const energyToSpend = energyCostPerSecond * dt;
+      let canAfford = true;
+      const reqParts: string[] = [];
+      for (const input of recipe.inputs) {
+        let has = 0;
+        for (const slot of inv.slots) {
+          if (slot && slot.itemId === input.itemId) has += slot.count;
+        }
+        const enough = has >= input.count;
+        if (!enough) canAfford = false;
+        reqParts.push(`${enough ? '✓' : '✗'} ${input.itemId.replace(/_/g, ' ')}: ${has}/${input.count}`);
+      }
+      btn.reqText.text = reqParts.join('  ');
+      btn.reqText.fill = canAfford ? 0x4cc9f0 : 0xff5555;
 
-      if (stats.energy >= energyToSpend) {
-        stats.energy = Math.max(0, stats.energy - energyToSpend);
-        queue.progress = Math.min(1, queue.progress + dt / recipe.craftTime);
-        world.addComponent(entity, CharacterStats as unknown as symbol, stats);
-        world.addComponent(entity, CraftingQueue as unknown as symbol, queue);
+      // Подсветка выбранного рецепта
+      if (btn.recipeId === this.selectedRecipe) {
+        btn.bg.clear();
+        btn.bg.rect(0, 0, 360, 70);
+        btn.bg.fill(0x3a3a5e);
+        btn.bg.stroke({ width: 2, color: 0x4cc9f0 });
       } else {
-        this.eventBus.emit('crafting:paused', { entity, recipeId: queue.recipeId, reason: 'no_energy' });
+        btn.bg.clear();
+        btn.bg.rect(0, 0, 360, 70);
+        btn.bg.fill(0x2a2a3e);
+        btn.bg.stroke({ width: 1, color: 0x3a3a5e });
       }
     }
+
+    this.updateCraftButton();
   }
 
-  /* ── Публичный API ───────────────────────────────────────────── */
+  private updateCraftButton(): void {
+    if (!this.craftBtn || !this.craftBtnText || !this.playerEntity) return;
 
-  /** Зарегистрировать рецепт в мире (вызывается плагинами предметов при установке). */
-  registerRecipe(world: World, recipe: CraftingRecipeData): void {
-    const entity = world.createEntity();
-    world.addComponent(entity, CraftingRecipe as unknown as symbol, recipe);
-    this.recipes.set(recipe.id, recipe);
-    this.eventBus.emit('crafting:recipe-registered', { recipeId: recipe.id });
-  }
-
-  /** Проверить, доступен ли рецепт для крафта. */
-  canCraft(entity: number, recipeId: string): boolean {
-    const recipe = this.recipes.get(recipeId);
-    if (!recipe) return false;
-
-    const stats = this.worldRef.getComponent(entity, CharacterStats as unknown as symbol) as CharacterStatsData | undefined;
-    const inv = this.worldRef.getComponent(entity, Inventory as unknown as symbol) as InventoryData | undefined;
-    const blueprints = this.worldRef.getComponent(entity, UnlockedBlueprint as unknown as symbol) as Array<{ blueprintId: string }> | undefined;
-
-    if (!stats || !inv) return false;
-
-    // 1. Разблокировка чертежей
-    for (const bp of recipe.unlockBlueprints) {
-      if (!blueprints || !blueprints.some((b) => b.blueprintId === bp)) return false;
+    const recipe = CRAFTING_RECIPES.find((r) => r.id === this.selectedRecipe);
+    if (!recipe) {
+      this.craftBtn.clear();
+      this.craftBtn.fill(0x444455);
+      this.craftBtnText.text = 'Выберите рецепт';
+      this.craftBtnText.x = 160 - this.craftBtnText.width / 2;
+      return;
     }
 
-    // 2. Ингредиенты
+    const inv = this.worldRef.getComponent(this.playerEntity, Inventory as unknown as symbol) as InventoryData | undefined;
+    if (!inv) return;
+
+    let canAfford = true;
     for (const input of recipe.inputs) {
-      if (!this.hasItemCount(inv, input.itemId, input.count)) return false;
+      let has = 0;
+      for (const slot of inv.slots) {
+        if (slot && slot.itemId === input.itemId) has += slot.count;
+      }
+      if (has < input.count) canAfford = false;
     }
 
-    // 3. Энергия
-    if (stats.energy < recipe.energyCost) return false;
-
-    // 4. Место в инвентаре для выходов
-    if (!this.hasSpaceForOutputs(inv, recipe.outputs)) return false;
-
-    return true;
+    this.craftBtn.clear();
+    this.craftBtn.fill(canAfford ? 0x4cc9f0 : 0x444455);
+    this.craftBtnText.text = canAfford ? `Скрафтить ${recipe.name}` : 'Недостаточно ресурсов';
+    this.craftBtnText.x = 190 - this.craftBtnText.width / 2;
   }
 
-  /** Начать крафт рецепта. Возвращает false, если не удалось начать. */
-  startCraft(entity: number, recipeId: string, stationEntity: number | null = null): boolean {
-    if (!this.canCraft(entity, recipeId)) return false;
+  private craft(recipeId: string): void {
+    if (!this.playerEntity) return;
 
-    const recipe = this.recipes.get(recipeId)!;
-    const stats = this.worldRef.getComponent(entity, CharacterStats as unknown as symbol) as CharacterStatsData;
-    const inv = this.worldRef.getComponent(entity, Inventory as unknown as symbol) as InventoryData;
-
-    // Списываем энергию
-    stats.energy = Math.max(0, stats.energy - recipe.energyCost);
-    this.worldRef.addComponent(entity, CharacterStats as unknown as symbol, stats);
-
-    // Списываем ингредиенты
-    for (const input of recipe.inputs) {
-      this.removeItemCount(inv, input.itemId, input.count, entity);
-    }
-
-    // Создаём очередь крафта (упрощённо: только один рецепт одновременно)
-    if (this.worldRef.hasComponent(entity, CraftingQueue as unknown as symbol)) {
-      return false;
-    }
-
-    this.worldRef.addComponent(entity, CraftingQueue as unknown as symbol, {
-      recipeId,
-      progress: 0,
-      startTime: Date.now(),
-      stationEntity,
-    });
-
-    this.eventBus.emit('crafting:started', { entity, recipeId, stationEntity });
-    return true;
-  }
-
-  /** Завершить крафт — выдать результаты в инвентарь. */
-  private completeCraft(entity: number, inv: InventoryData, queue: CraftingQueueData): void {
-    const recipe = this.recipes.get(queue.recipeId);
+    const recipe = CRAFTING_RECIPES.find((r) => r.id === recipeId);
     if (!recipe) return;
 
-    for (const output of recipe.outputs) {
-      const existing = this.findSlotWithItem(inv, output.itemId);
-      if (existing !== -1) {
-        const slot = inv.slots[existing]!;
-        slot.count += output.count;
-        inv.slots[existing] = slot;
-      } else {
-        const emptySlot = inv.slots.findIndex((s) => !s);
-        if (emptySlot !== -1) {
-          inv.slots[emptySlot] = {
-            itemId: output.itemId,
-            count: output.count,
-            maxCount: StackLimits.default,
-            tags: [],
-          };
+    const inv = this.worldRef.getComponent(this.playerEntity, Inventory as unknown as symbol) as InventoryData | undefined;
+    if (!inv) return;
+
+    // Проверяем ресурсы
+    for (const input of recipe.inputs) {
+      let has = 0;
+      for (const slot of inv.slots) {
+        if (slot && slot.itemId === input.itemId) has += slot.count;
+      }
+      if (has < input.count) return; // Недостаточно ресурсов
+    }
+
+    // Списываем ресурсы
+    for (const input of recipe.inputs) {
+      let remaining = input.count;
+      for (let i = 0; i < inv.slots.length && remaining > 0; i++) {
+        const slot = inv.slots[i];
+        if (slot && slot.itemId === input.itemId) {
+          const remove = Math.min(slot.count, remaining);
+          slot.count -= remove;
+          remaining -= remove;
+          if (slot.count <= 0) inv.slots[i] = null;
+          else inv.slots[i] = slot;
         }
-        // Если места нет — предмет теряется (в полной версии — выброс на землю)
       }
     }
 
-    this.worldRef.addComponent(entity, Inventory as unknown as symbol, inv);
-    this.eventBus.emit('crafting:completed', { entity, recipeId: queue.recipeId, outputs: recipe.outputs });
-  }
-
-  /* ── Вспомогательное ─────────────────────────────────────────── */
-
-  private hasItemCount(inv: InventoryData, itemId: string, count: number): boolean {
-    let total = 0;
-    for (const slot of inv.slots) {
-      if (slot && slot.itemId === itemId) total += slot.count;
-      if (total >= count) return true;
+    // Добавляем результат
+    const added = this.addItemToInventory(recipe.output.itemId, recipe.output.count);
+    if (added > 0) {
+      this.worldRef.addComponent(this.playerEntity, Inventory as unknown as symbol, inv);
+      this.eventBus.emit('item:crafted', {
+        entity: this.playerEntity,
+        recipeId: recipe.id,
+        itemId: recipe.output.itemId,
+        count: recipe.output.count,
+      });
     }
-    return false;
+    this.updateRecipeRequirements(this.playerEntity);
   }
 
-  private removeItemCount(inv: InventoryData, itemId: string, count: number, entity: number): void {
+  private addItemToInventory(itemId: string, count: number): number {
+    if (!this.playerEntity) return 0;
+    const inv = this.worldRef.getComponent(this.playerEntity, Inventory as unknown as symbol) as InventoryData | undefined;
+    if (!inv) return 0;
+
     let remaining = count;
+    const tags = this.getItemTags(itemId);
+    const maxCount = 64; // default stack limit
+
+    // Добиваем существующие стаки
     for (let i = 0; i < inv.slots.length && remaining > 0; i++) {
       const slot = inv.slots[i];
-      if (slot && slot.itemId === itemId) {
-        const remove = Math.min(slot.count, remaining);
-        slot.count -= remove;
-        remaining -= remove;
-        if (slot.count <= 0) inv.slots[i] = null;
-        else inv.slots[i] = slot;
+      if (slot && slot.itemId === itemId && slot.count < slot.maxCount) {
+        const space = slot.maxCount - slot.count;
+        const add = Math.min(space, remaining);
+        slot.count += add;
+        remaining -= add;
+        inv.slots[i] = slot;
       }
     }
-    this.worldRef.addComponent(entity, Inventory as unknown as symbol, inv);
-  }
 
-  private hasSpaceForOutputs(inv: InventoryData, outputs: Array<{ itemId: string; count: number }>): boolean {
-    const needed = new Map<string, number>();
-    for (const out of outputs) {
-      needed.set(out.itemId, (needed.get(out.itemId) ?? 0) + out.count);
-    }
-
-    for (const [itemId, count] of needed) {
-      let space = 0;
-      for (const slot of inv.slots) {
-        if (!slot) { space += StackLimits.default; continue; }
-        if (slot.itemId === itemId) space += slot.maxCount - slot.count;
+    // Новые стаки
+    for (let i = 0; i < inv.slots.length && remaining > 0; i++) {
+      if (!inv.slots[i]) {
+        const add = Math.min(maxCount, remaining);
+        inv.slots[i] = { itemId, count: add, maxCount, tags };
+        remaining -= add;
       }
-      if (space < count) return false;
     }
-    return true;
+
+    return count - remaining;
   }
 
-  private findSlotWithItem(inv: InventoryData, itemId: string): number {
-    return inv.slots.findIndex((s) => s && s.itemId === itemId && s.count < s.maxCount);
+  private getItemTags(itemId: string): string[] {
+    const tagMap: Record<string, string[]> = {
+      stone_slabs: ['building_material'],
+      ferrite_ore: ['ore'],
+      stone_wall: ['building_material'],
+      gravity_anchor: ['device'],
+    };
+    return tagMap[itemId] ?? [];
   }
-}
 
-interface CharacterStatsData {
-  energy: number;
+  /** Получить текстуру предмета для инвентаря. */
+  getItemTexture(itemId: string): string {
+    return CRAFT_ITEM_TEXTURES[itemId] ?? 'src/assets/textures/item_stone_slabs.png';
+  }
+
+  /** Открыть/закрыть меню крафта. */
+  toggle(): void {
+    this.visible = !this.visible;
+    if (this.uiContainer) {
+      this.uiContainer.visible = this.visible;
+    }
+  }
+
+  isVisible(): boolean {
+    return this.visible;
+  }
+
+  /** Установить игрока. */
+  setPlayerEntity(entity: number): void {
+    this.playerEntity = entity;
+  }
 }
