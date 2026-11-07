@@ -42,10 +42,11 @@ export class RenderService {
     this.resize();
   }
 
-  /** Загрузить текстуру по URL (кешируется). */
+  /** Загрузить текстуру по URL (кешируется). PixiJS v8: Texture.from(url) не подгружает
+   *  отсутствующий в кэше ассет и возвращает undefined, поэтому используем Assets.load. */
   async loadTexture(url: string): Promise<PIXI.Texture> {
     if (this.textures.has(url)) return this.textures.get(url)!;
-    const texture = await PIXI.Texture.from(url);
+    const texture = await PIXI.Assets.load(url);
     this.textures.set(url, texture);
     return texture;
   }
