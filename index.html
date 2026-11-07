@@ -184,5 +184,37 @@
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
+  <script>
+    // Отладочный вывод JS-ошибок прямо на страницу
+    const logEl = document.createElement('div');
+    logEl.style.cssText = 'position:absolute;bottom:0;left:0;right:0;background:#000;color:#0f0;font-family:monospace;font-size:10px;max-height:150px;overflow:auto;pointer-events:none;z-index:9999;display:none;';
+    logEl.id = 'js-debug-log';
+    document.body.appendChild(logEl);
+    window.onerror = (msg, url, line) => {
+      const el = document.getElementById('js-debug-log');
+      if (el) {
+        el.style.display = 'block';
+        el.textContent += `\n[ERROR] ${msg} at ${url}:${line}`;
+      }
+      return false;
+    };
+    window.addEventListener('unhandledrejection', (e) => {
+      const el = document.getElementById('js-debug-log');
+      if (el) {
+        el.style.display = 'block';
+        el.textContent += `\n[REJECTION] ${e.reason}`;
+      }
+    });
+    // Логируем console.error тоже
+    const origError = console.error;
+    console.error = (...args) => {
+      origError.apply(console, args);
+      const el = document.getElementById('js-debug-log');
+      if (el) {
+        el.style.display = 'block';
+        el.textContent += '\n[CONSOLE.ERROR] ' + args.map(a => String(a)).join(' ');
+      }
+    };
+  </script>
 </body>
 </html>

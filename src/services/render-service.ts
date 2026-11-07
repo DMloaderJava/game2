@@ -142,7 +142,9 @@ export class RenderService {
   }
 
   render(): void {
-    this.app?.render();
+    if (!this.app) return;
+    // PixiJS v8: явно рендерим сцену через рендерер
+    (this.app.renderer as any).render(this.app.stage);
   }
 
   setBackgroundColor(color: number): void {
@@ -158,9 +160,18 @@ export class RenderService {
     const texture = await this.loadTexture(url);
     const app = this.app;
     if (app) {
+      // Ждём, пока текстура декодируется, чтобы избежать чтения width/height до загрузки
+      if (!texture.baseTexture || !texture.baseTexture.source) {
+        await new Promise((resolve) => {
+          texture.once('update', resolve);
+          setTimeout(resolve, 2000);
+        });
+      }
       const bg: any = new PIXI.Sprite(texture);
       const renderer: any = app.renderer;
-      bg.scale.set(renderer.width / bg.texture.width, renderer.height / bg.texture.height);
+      const tw = texture.width > 0 ? texture.width : renderer.width;
+      const th = texture.height > 0 ? texture.height : renderer.height;
+      bg.scale.set(renderer.width / tw, renderer.height / th);
       this.stage?.addChildAt(bg, 0);
       this.displayObjects.set(-1, bg);
     }
