@@ -53,11 +53,11 @@ export const CRAFTING_RECIPES: CraftingRecipeData[] = [
 
 /** Текстуры для предметов крафта. */
 const CRAFT_ITEM_TEXTURES: Record<string, string> = {
-  stone_slabs: 'src/assets/textures/item_stone_slabs.png',
-  ferrite_ore: 'src/assets/textures/item_ferrite_ore.png',
-  stone_wall: 'src/assets/textures/block_stone_wall.png',
-  gravity_anchor: 'src/assets/textures/gravity_anchor.png',
-  energy_dome: 'src/assets/textures/energy_dome.png',
+  stone_slabs: '/textures/item_stone_slabs.png',
+  ferrite_ore: '/textures/item_ferrite_ore.png',
+  stone_wall: '/textures/block_stone_wall.png',
+  gravity_anchor: '/textures/gravity_anchor.png',
+  energy_dome: '/textures/energy_dome.png',
 };
 
 export class CraftingSystem extends System {
@@ -400,7 +400,7 @@ export class CraftingSystem extends System {
 
   /** Получить текстуру предмета для инвентаря. */
   getItemTexture(itemId: string): string {
-    return CRAFT_ITEM_TEXTURES[itemId] ?? 'src/assets/textures/item_stone_slabs.png';
+    return CRAFT_ITEM_TEXTURES[itemId] ?? '/textures/item_stone_slabs.png';
   }
 
   /** Открыть/закрыть меню крафта. */

@@ -38,7 +38,7 @@ export const BUILDABLE_ITEMS: Record<string, BuildableItem> = {
   stone_wall: {
     itemId: 'stone_wall',
     name: 'Каменная стена',
-    texture: 'src/assets/textures/block_stone_wall.png',
+    texture: '/textures/block_stone_wall.png',
     width: 64,
     height: 64,
     physics: { width: 64, height: 64, isStatic: true, label: 'stone_wall' },
@@ -56,7 +56,7 @@ export const BUILDABLE_ITEMS: Record<string, BuildableItem> = {
   gravity_anchor: {
     itemId: 'gravity_anchor',
     name: 'Гравитационный якорь',
-    texture: 'src/assets/textures/gravity_anchor.png',
+    texture: '/textures/gravity_anchor.png',
     width: 64,
     height: 64,
     physics: { width: 32, height: 32, isStatic: true, label: 'gravity_anchor' },
@@ -74,7 +74,7 @@ export const BUILDABLE_ITEMS: Record<string, BuildableItem> = {
   energy_dome: {
     itemId: 'energy_dome',
     name: 'Энергетический купол',
-    texture: 'src/assets/textures/energy_dome.png',
+    texture: '/textures/energy_dome.png',
     width: 64,
     height: 64,
     physics: { width: 64, height: 64, isStatic: true, label: 'energy_dome' },

@@ -295,16 +295,16 @@ export class InventorySystem extends System {
 
   private getItemTextureUrl(itemId: string): string {
     const map: Record<string, string> = {
-      stone_slabs: 'src/assets/textures/item_stone_slabs.png',
-      ferrite_ore: 'src/assets/textures/item_ferrite_ore.png',
-      resonit: 'src/assets/textures/item_resonit.png',
-      biovolume: 'src/assets/textures/item_biovolume.png',
-      biogel: 'src/assets/textures/item_biogel.png',
-      ancient_fragment: 'src/assets/textures/item_ancient_fragment.png',
-      stone_wall: 'src/assets/textures/block_stone_wall.png',
-      gravity_anchor: 'src/assets/textures/gravity_anchor.png',
-      energy_dome: 'src/assets/textures/energy_dome.png',
+      stone_slabs: '/textures/item_stone_slabs.png',
+      ferrite_ore: '/textures/item_ferrite_ore.png',
+      resonit: '/textures/item_resonit.png',
+      biovolume: '/textures/item_biovolume.png',
+      biogel: '/textures/item_biogel.png',
+      ancient_fragment: '/textures/item_ancient_fragment.png',
+      stone_wall: '/textures/block_stone_wall.png',
+      gravity_anchor: '/textures/gravity_anchor.png',
+      energy_dome: '/textures/energy_dome.png',
     };
-    return map[itemId] ?? 'src/assets/textures/item_stone_slabs.png';
+    return map[itemId] ?? '/textures/item_stone_slabs.png';
   }
 }
