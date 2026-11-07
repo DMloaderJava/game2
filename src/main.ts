@@ -35,6 +35,8 @@ import { DeviceSystem } from './systems/device-system';
 import { AbilitySystem } from './systems/ability-system';
 import { ProgressionSystem } from './systems/progression-system';
 import { ScanningSystem } from './systems/scanning-system';
+import { GravityTideSystem } from './systems/gravity-tide-system';
+import { WorldMutationSystem } from './systems/world-mutation-system';
 
 import { Transform } from './components/transform';
 import { PhysicsBody } from './components/physics-body';
@@ -74,6 +76,13 @@ import {
 import {
   Scanner, ScanKnowledge, BioSample, AncientFragmentKnowledge,
 } from './components/scanning';
+import {
+  TideState,
+  AnomalyZone,
+  WorldMutation,
+  MutationMarker,
+  EnergyDome,
+} from './components/event-state';
 import { Vec2 } from './core/vec2';
 
 // 1. Сервисы (DI)
@@ -147,6 +156,13 @@ world.registerComponent(ScanKnowledge as unknown as symbol);
 world.registerComponent(BioSample as unknown as symbol);
 world.registerComponent(AncientFragmentKnowledge as unknown as symbol);
 
+// Гравитационный прилив и мутация мира
+world.registerComponent(TideState as unknown as symbol);
+world.registerComponent(AnomalyZone as unknown as symbol);
+world.registerComponent(WorldMutation as unknown as symbol);
+world.registerComponent(MutationMarker as unknown as symbol);
+world.registerComponent(EnergyDome as unknown as symbol);
+
 // 4. Сервисы и системы с зависимостями
 const staminaEnergySystem = new StaminaEnergySystem(eventBus);
 const craftingSystem = new CraftingSystem(eventBus);
@@ -166,6 +182,8 @@ const scanningSystem = new ScanningSystem(eventBus, {
   },
 });
 const gravitySystem = new GravitySystem(physics, eventBus);
+const gravityTideSystem = new GravityTideSystem(eventBus, physics);
+const worldMutationSystem = new WorldMutationSystem(eventBus);
 
 // 5. Адаптер stamina/energy для GrabThrowSystem
 const staminaEnergy = {
@@ -181,28 +199,30 @@ const staminaEnergy = {
 };
 
 // 6. Базовые системы в порядке приоритета (сортировка по приоритету внутри World.addSystem)
-world.addSystem(new ChunkSystem(eventBus));                    // 8  ← загрузка чанков мира
-world.addSystem(new InputSystem(input, eventBus));             // 10
-world.addSystem(scanningSystem);                               // 16  ← сканирование мира
-world.addSystem(new CharacterSystem(eventBus));                // 12  ← стейт-машина персонажа
-world.addSystem(staminaEnergySystem);                          // 18  ← выносливость/энергия
-world.addSystem(new AISystem(physics, eventBus));              // 20
-world.addSystem(new GrabThrowSystem(physics, eventBus, staminaEnergy)); // 22
-world.addSystem(new MiningSystem(physics, eventBus));          // 28  ← добыча и разрушение тайлов
-world.addSystem(gravitySystem);                                // 25 ← гравитация (sort по приоритету)
-world.addSystem(abilitySystem);                                // 35  ← способности и синергии
-world.addSystem(new PhysicsSystem(physics, eventBus));         // 30
-world.addSystem(new ConstructionSystem(physics, eventBus));    // 40  ← строительство
-world.addSystem(new InventorySystem(eventBus));                // 50  ← инвентарь
-world.addSystem(craftingSystem);                               // 52  ← крафт
-world.addSystem(new DeviceSystem(eventBus));                   // 55  ← устройства и энергия
-world.addSystem(new EventSystem(eventBus));                    // 60  ← катастрофы
-world.addSystem(progressionSystem);                            // 65  ← прогрессия и разблокировка способностей
-const renderSystem = new RenderSystem(render);                 // 90
+world.addSystem(new ChunkSystem(eventBus));                              // 8
+world.addSystem(new InputSystem(input, eventBus));                       // 10
+world.addSystem(scanningSystem);                                         // 16
+world.addSystem(new CharacterSystem(eventBus));                          // 12
+world.addSystem(staminaEnergySystem);                                    // 18
+world.addSystem(new AISystem(physics, eventBus));                        // 20
+world.addSystem(new GrabThrowSystem(physics, eventBus, staminaEnergy));  // 22
+world.addSystem(new MiningSystem(physics, eventBus));                    // 28
+world.addSystem(gravitySystem);                                          // 25
+world.addSystem(gravityTideSystem);                                      // 70
+world.addSystem(worldMutationSystem);                                    // 75
+world.addSystem(abilitySystem);                                          // 35
+world.addSystem(new PhysicsSystem(physics, eventBus));                   // 30
+world.addSystem(new ConstructionSystem(physics, eventBus));              // 40
+world.addSystem(new InventorySystem(eventBus));                          // 50
+world.addSystem(craftingSystem);                                         // 52
+world.addSystem(new DeviceSystem(eventBus));                             // 55
+world.addSystem(new EventSystem(eventBus));                              // 60
+world.addSystem(progressionSystem);                                      // 65
+const renderSystem = new RenderSystem(render);                           // 90
 world.addSystem(renderSystem);
 const deathSystem = new DeathSystem(eventBus);
-world.addSystem(deathSystem);                                  // 100 ← смерть
-world.addSystem(new SaveSystem(storage, eventBus));            // 100
+world.addSystem(deathSystem);                                            // 100
+world.addSystem(new SaveSystem(storage, eventBus));                      // 100
 
 // 7. Пример: создание игрока
 const player = world.createEntity();
