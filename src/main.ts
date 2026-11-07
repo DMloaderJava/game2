@@ -3,7 +3,6 @@
  * Исправленный билд: PixiJS v8 app.init(), текстуры вместо примитивов,
  * рабочая камера, добыча ресурсов по клавише E, инвентарь.
  */
-import * as PIXI from 'pixi.js';
 import { World } from './ecs/world';
 import { EventBus } from './core/event-bus';
 import { GameLoop } from './core/game-loop';
@@ -137,14 +136,6 @@ async function bootstrap(): Promise<void> {
     height: window.innerHeight,
     background: 0x05050a,
   });
-
-  // ТЕСТ: красный квадрат для проверки рендеринга PixiJS
-  const testRect = new PIXI.Graphics();
-  testRect.rect(0, 0, 500, 500);
-  testRect.fill(0xff0000);
-  testRect.alpha = 1.0;
-  render.stage?.addChild(testRect);
-  console.log('TEST: red square added to stage, stage children:', render.stage?.children.length);
 
   // Предзагружаем текстуры
   await render.loadTextures(Object.values(TEX));
