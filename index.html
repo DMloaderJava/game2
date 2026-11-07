@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GRAVITY: VOID — архитектура и техстек</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #050508; color: #e8e8f0; line-height: 1.6; }
+    .container { max-width: 900px; margin: 48px auto; padding: 0 24px; }
+    h1 { font-size: 2.2rem; margin-bottom: 12px; letter-spacing: -0.5px; }
+    h2 { font-size: 1.3rem; margin: 32px 0 12px; color: #7c93ff; border-bottom: 1px solid #222; padding-bottom: 6px; }
+    p { margin: 12px 0; color: #c4c4d0; }
+    .badge { display: inline-block; background: #1a1a26; border: 1px solid #333; padding: 4px 10px; border-radius: 12px; font-size: 0.85rem; margin: 4px 6px 4px 0; color: #b8b8d0; }
+    .badge strong { color: #7c93ff; }
+    .card { background: #0f0f16; border: 1px solid #222; border-radius: 10px; padding: 20px; margin: 20px 0; }
+    .card h3 { color: #a8c4ff; margin-bottom: 8px; }
+    ul { margin: 8px 0 8px 22px; color: #c4c4d0; }
+    li { margin: 6px 0; }
+    a { color: #7c93ff; text-decoration: underline; }
+    a:hover { color: #a8c4ff; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.9rem; }
+    .note { color: #8a8aa0; font-size: 0.9rem; border-left: 3px solid #333; padding-left: 12px; margin: 16px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>GRAVITY: VOID</h1>
+    <p class="note">2D Side-scroller · Survival / Sandbox / RPG / Physics · Веб-браузер</p>
+
+    <div class="card">
+      <h2>Статус проекта</h2>
+      <p>Репозиторий содержит <strong>архитектурную документацию</strong> и <strong>эталонную реализацию ядра ECS</strong> на TypeScript. Это файл 설계 — игра ещё не собрана.</p>
+      <p><span class="badge"><strong>Ветка:</strong> arena/250eb9d3-game2</span>
+         <span class="badge"><strong>Ядро:</strong> ECS (Entity-Component-System)</span>
+         <span class="badge"><strong>Рендер:</strong> PixiJS v8 (WebGL)</span>
+         <span class="badge"><strong>Физика:</strong> Matter.js</span>
+         <span class="badge"><strong>Звук:</strong> Howler.js</span>
+         <span class="badge"><strong>Хранение:</strong> IndexedDB</span>
+         <span class="badge"><strong>Сборка:</strong> Vite + TypeScript</span></p>
+    </div>
+
+    <div class="card">
+      <h2>Документация</h2>
+      <ul>
+        <li><a href="docs/01-tech-stack.md">01-tech-stack.md</a> — выбор технологий</li>
+        <li><a href="docs/02-architecture.md">02-architecture.md</a> — ECS-архитектура, модульность, плагины</li>
+        <li><a href="docs/03-systems.md">03-systems.md</a> — 8 базовых систем (физика, рендер, ввод, инвентарь, строительство, ИИ, события, сохранения)</li>
+        <li><a href="docs/04-interaction.md">04-interaction.md</a> — схема взаимодействия модулей (Mermaid)</li>
+        <li><a href="docs/05-folder-structure.md">05-folder-structure.md</a> — структура папок проекта</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Исходный код (ядро ECS)</h2>
+      <p class="mono">src/ecs/world.ts — World (сущности, компоненты, системы, query)<br/>
+      src/ecs/system.ts — базовый класс System<br/>
+      src/ecs/component.ts, entity.ts, query.ts — примитивы ECS<br/>
+      src/core/event-bus.ts — шина событий pub/sub<br/>
+      src/core/game-loop.ts — фиксированный шаг 60 FPS + интерполированный рендер<br/>
+      src/core/types.ts — типы GameConfig, Plugin, ServiceLocator<br/>
+      src/components/ — чистые данные (Transform, PhysicsBody, Renderable, Player, GravityZone, Intent*)<br/>
+      src/systems/ — InputSystem, AISystem, PhysicsSystem, ConstructionSystem, InventorySystem, EventSystem, RenderSystem, SaveSystem<br/>
+      src/services/ — обёртки над PixiJS, Matter.js, Howler.js, IndexedDB, ввод<br/>
+      src/modules/biomes/void-biome.ts — пример плагина биома (не меняет ядро)<br/>
+      src/main.ts — точка входа, сборка мира и запуск GameLoop</p>
+    </div>
+
+    <div class="card">
+      <h2>Команды разработки</h2>
+      <p class="mono">npm run typecheck   # проверка типов TypeScript<br/>
+      npm run dev         # запуск dev-сервера (текущий превью)<br/>
+      npm run build       # сборка в dist/</p>
+    </div>
+
+    <div class="note">
+      Архитектура позволяет добавлять биомы, способности, предметы и типы ИИ через плагины, не переписывая ядро ECS. Высокая производительность обеспечивается спрайт-батчингом PixiJS, sleeping-телами и эффективным broadphase Matter.js.
+    </div>
+  </div>
+</body>
+</html>
