@@ -26,6 +26,9 @@ import { Inventory } from './components/inventory';
 import { ItemStack } from './components/inventory';
 import { Chunk, DEFAULT_CHUNK_CONFIG, TileType } from './components/world';
 import { MiningTool, Tools, Mineable } from './components/mining';
+import { CharacterStatsData } from './components/character';
+import { GravityAnchor } from './components/construction';
+import { EnergyDome } from './components/event-state';
 
 import { InputSystem } from './systems/input-system';
 import { CharacterSystem } from './systems/character-system';
@@ -79,6 +82,7 @@ const TEX = {
   // Устройства
   gravityAnchor: 'src/assets/textures/gravity_anchor.png',
   gravityZone: 'src/assets/textures/gravity_zone.png',
+  energyDome: 'src/assets/textures/energy_dome.png',
   // UI
   bgSpace: 'src/assets/textures/bg_space.png',
   uiSlot: 'src/assets/textures/ui_slot.png',
@@ -157,6 +161,7 @@ async function bootstrap(): Promise<void> {
   world.registerComponent(Inventory as unknown as symbol);
   world.registerComponent(ItemStack as unknown as symbol);
   world.registerComponent(Mineable as unknown as symbol);
+  world.registerComponent(EnergyDome as unknown as symbol);
 
   // ============================================================================
   // 3. Игрок
@@ -396,20 +401,23 @@ async function bootstrap(): Promise<void> {
   craftingSystem.setPlayerEntity(player);
   const buildingSystem = new BuildingSystem(render, eventBus);
   buildingSystem.setPhysicsService(physics);
-  const tideSystem = new GravityTideSystem(eventBus, physics);
+  const gravitySystem = new GravitySystem(physics, eventBus);
+  const tideSystem = new GravityTideSystem(eventBus, physics, gravitySystem, render);
   tideSystem.setNextGravityVector(0, -9.81 * 60); // инверсия гравитации вверх при прилив
 
   world.addSystem(new InputSystem(input, eventBus));           // 10
   world.addSystem(new CharacterSystem(eventBus));              // 12
   world.addSystem(staminaEnergySystem);                        // 18
-  world.addSystem(new GravitySystem(physics, eventBus));       // 25
+  world.addSystem(gravitySystem);
+  world.addSystem(miningSystem);                               // 28 (добыча перед физикой)
+  world.addSystem(gravitySystem);                              // 25
   world.addSystem(miningSystem);                               // 28 (добыча перед физикой)
   world.addSystem(new PhysicsSystem(physics, eventBus));       // 30
   world.addSystem(playerAnimationSystem);                      // 35 (анимация игрока)
   world.addSystem(craftingSystem);                             // 45 (крафт)
   world.addSystem(buildingSystem);                             // 55 (строительство)
-  world.addSystem(tideSystem);                                 // 70 (гравитационный прилив)
   world.addSystem(inventorySystem);                            // 50 (инвентарь)
+  world.addSystem(tideSystem);                                 // 70 (гравитационный прилив)
   const renderSystem = new RenderSystem(render, physics);      // 40 (отрисовка после физики)
   world.addSystem(renderSystem);
 
@@ -426,6 +434,32 @@ async function bootstrap(): Promise<void> {
         render.follow(playerBody.position.x, playerBody.position.y, 0.12);
         const camPos = render.getCameraPosition();
         buildingSystem.setCameraPosition(camPos.x, camPos.y);
+
+        // Killzone: смерть при вылете за границы карты
+        const playerTransform = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number; rotation?: number } | undefined;
+        if (playerTransform) {
+          if (playerTransform.y > 2000 || playerTransform.y < -1500) {
+            // Смерть игрока — респавн на поверхности
+            playerTransform.x = 200;
+            playerTransform.y = 300;
+            if (playerTransform.rotation !== undefined) {
+              playerTransform.rotation = 0;
+            }
+            // Восстанавливаем характеристики
+            const stats = world.getComponent(player, CharacterStats as unknown as symbol) as CharacterStatsData | undefined;
+            if (stats) {
+              stats.health = stats.maxHealth;
+              stats.stamina = stats.maxStamina;
+              stats.energy = stats.maxEnergy;
+              stats.exhausted = false;
+              world.addComponent(player, CharacterStats as unknown as symbol, stats);
+            }
+            // Сбрасываем скорость и позицию тела
+            physics.setVelocity(playerBody, 0, 0);
+            physics.setPosition(playerBody, 200, 300);
+            showPickupToast('Смерть: выход за границы карты', 0);
+          }
+        }
       }
       renderSystem.draw(world, alpha);
       render.render();
@@ -478,6 +512,9 @@ async function bootstrap(): Promise<void> {
     }
     if (e.key === '2') {
       buildingSystem.selectItem('gravity_anchor');
+    }
+    if (e.key === '3') {
+      buildingSystem.selectItem('energy_dome');
     }
     if (e.key === 'Escape') {
       buildingSystem.selectItem(null);

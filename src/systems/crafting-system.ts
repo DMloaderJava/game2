@@ -39,6 +39,16 @@ export const CRAFTING_RECIPES: CraftingRecipeData[] = [
     output: { itemId: 'gravity_anchor', count: 1 },
     unlockAt: null,
   },
+  {
+    id: 'energy_dome',
+    name: 'Энергетический купол',
+    inputs: [
+      { itemId: 'ferrite_ore', count: 10 },
+      { itemId: 'resonit', count: 5 },
+    ],
+    output: { itemId: 'energy_dome', count: 1 },
+    unlockAt: null,
+  },
 ];
 
 /** Текстуры для предметов крафта. */
@@ -47,6 +57,7 @@ const CRAFT_ITEM_TEXTURES: Record<string, string> = {
   ferrite_ore: 'src/assets/textures/item_ferrite_ore.png',
   stone_wall: 'src/assets/textures/block_stone_wall.png',
   gravity_anchor: 'src/assets/textures/gravity_anchor.png',
+  energy_dome: 'src/assets/textures/energy_dome.png',
 };
 
 export class CraftingSystem extends System {
@@ -382,6 +393,7 @@ export class CraftingSystem extends System {
       ferrite_ore: ['ore'],
       stone_wall: ['building_material'],
       gravity_anchor: ['device'],
+      energy_dome: ['device'],
     };
     return tagMap[itemId] ?? [];
   }

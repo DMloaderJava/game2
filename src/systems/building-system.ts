@@ -18,6 +18,7 @@ import { Mineable, MineableData } from '../components/mining';
 import { TileType } from '../components/world';
 import { Vec2 } from '../core/vec2';
 import { GravityAnchor } from '../components/construction';
+import { EnergyDome } from '../components/event-state';
 
 const GRID_SIZE = 64;
 
@@ -70,6 +71,24 @@ export const BUILDABLE_ITEMS: Record<string, BuildableItem> = {
       defaultEffectiveness: { construction: 1.0 },
     },
   },
+  energy_dome: {
+    itemId: 'energy_dome',
+    name: 'Энергетический купол',
+    texture: 'src/assets/textures/energy_dome.png',
+    width: 64,
+    height: 64,
+    physics: { width: 64, height: 64, isStatic: true, label: 'energy_dome' },
+    material: { mass: 0, density: 5000, strength: 50000 },
+    mineable: {
+      tileType: 'construction',
+      hardness: 1,
+      health: 150,
+      maxHealth: 150,
+      resourceDrop: 'energy_dome',
+      dropAmount: 1,
+      defaultEffectiveness: { construction: 1.0 },
+    },
+  },
 };
 
 export class BuildingSystem extends System {
@@ -79,7 +98,7 @@ export class BuildingSystem extends System {
   private worldRef!: World;
   private render: RenderService;
   private eventBus: EventBus;
-  private physics: { createRectangleBody: (e: number, x: number, y: number, w: number, h: number, opts: any) => any } | null = null;
+  private physics: { createRectangleBody: (e: number, x: number, y: number, w: number, h: number, opts: any) => any; queryPoint: (x: number, y: number) => any[] } | null = null;
 
   private playerEntity: number | null = null;
   private selectedItemId: string | null = null;
@@ -91,6 +110,7 @@ export class BuildingSystem extends System {
   private mouseY = 0;
   private cameraX = 0;
   private cameraY = 0;
+  private displayObjects = new Map<string, any>();
 
   constructor(render: RenderService, eventBus: EventBus) {
     super();
@@ -213,15 +233,44 @@ export class BuildingSystem extends System {
   }
 
   private canPlaceAt(x: number, y: number, item: BuildableItem): boolean {
-    // Проверяем, не перекрываем ли мы игрока или другие постройки
-    // Упрощённая проверка: всегда можно, если не на игроке
-    if (!this.playerEntity) return true;
+    // Проверяем, не перекрываем ли мы игрока
+    if (!this.playerEntity || !this.worldRef) return true;
     const playerTransform = this.worldRef.getComponent(this.playerEntity, Transform as unknown as symbol) as { x: number; y: number } | undefined;
     if (playerTransform) {
       const dist = Math.hypot(x - playerTransform.x, y - playerTransform.y);
       if (dist < 60) return false;
     }
-    return true;
+
+    // Проверка опоры: под блоком должна быть земля или другая постройка
+    const supportY = y + item.height / 2 + GRID_SIZE / 2;
+    const supportX = x;
+
+    // Проверяем наличие физического тела под целью (земля, блок или постройка)
+    const bodies = this.physics?.queryPoint(supportX, supportY) ?? [];
+    let hasSupport = false;
+    for (const body of bodies) {
+      const bodyEntity = (body as any).entity;
+      if (bodyEntity === this.playerEntity) continue;
+      // Если есть тело под блоком — есть опора
+      const material = this.worldRef.getComponent(bodyEntity, Material as unknown as symbol) as { mass: number } | undefined;
+      if (material) {
+        hasSupport = true;
+        break;
+      }
+    }
+
+    // Также можно строить на земле уровня (которая на GROUND_Y + GROUND_HEIGHT/2)
+    // Но для упрощения — проверяем наличие любого тела под блоком
+    if (!hasSupport) {
+      // Проверяем, не находимся ли мы над землей уровня (GROUND_Y = 500)
+      const GROUND_Y = 500;
+      const GROUND_HEIGHT = 64;
+      if (supportY > GROUND_Y + GROUND_HEIGHT / 2 - 10 && supportY < GROUND_Y + GROUND_HEIGHT / 2 + 10) {
+        hasSupport = true;
+      }
+    }
+
+    return hasSupport;
   }
 
   private placeBuilding(): void {
@@ -322,6 +371,19 @@ export class BuildingSystem extends System {
       });
     }
 
+    // Энергетический купол — добавляем компонент с радиусом защиты
+    if (item.itemId === 'energy_dome') {
+      this.worldRef.addComponent(entity, EnergyDome as unknown as symbol, {
+        active: true,
+        radius: 200,
+        energyPerSecond: 0,
+        energyDrainPerStructure: 0,
+        storedEnergy: 1000,
+        maxStored: 1000,
+        protectedEntities: [],
+      });
+    }
+
     // Событие
     this.eventBus.emit('building:placed', {
       entity,
@@ -329,6 +391,25 @@ export class BuildingSystem extends System {
       x: this.ghostX,
       y: this.ghostY,
     });
+
+    // Отрисовываем зону защиты для якоря и купола
+    if (item.itemId === 'gravity_anchor' || item.itemId === 'energy_dome') {
+      const radius = item.itemId === 'gravity_anchor' ? 250 : 200;
+      const zoneSprite = new PIXI.Graphics();
+      zoneSprite.beginFill(0x4cc9f0, 0.15);
+      zoneSprite.lineStyle(2, 0x4cc9f0, 0.5);
+      zoneSprite.drawCircle(0, 0, radius);
+      zoneSprite.endFill();
+      zoneSprite.x = this.ghostX;
+      zoneSprite.y = this.ghostY;
+      zoneSprite.alpha = 0.6;
+      const layer = this.render as any;
+      const container = layer.layers?.get(20) ?? layer.stage;
+      container.addChild(zoneSprite);
+      // Сохраняем ссылку на спрайт зоны в сущности для последующего удаления
+      (zoneSprite as any)._entity = entity;
+      this.displayObjects.set(`zone-${entity}`, zoneSprite);
+    }
 
     // Выходим из режима строительства после размещения
     this.selectItem(null);
@@ -350,7 +431,7 @@ export class BuildingSystem extends System {
   }
 
   /** Установить PhysicsService (вызывается из main.ts). */
-  setPhysicsService(physics: { createRectangleBody: (e: number, x: number, y: number, w: number, h: number, opts: any) => any }): void {
+  setPhysicsService(physics: { createRectangleBody: (e: number, x: number, y: number, w: number, h: number, opts: any) => any; queryPoint: (x: number, y: number) => any[] }): void {
     this.physics = physics;
   }
 

@@ -303,6 +303,7 @@ export class InventorySystem extends System {
       ancient_fragment: 'src/assets/textures/item_ancient_fragment.png',
       stone_wall: 'src/assets/textures/block_stone_wall.png',
       gravity_anchor: 'src/assets/textures/gravity_anchor.png',
+      energy_dome: 'src/assets/textures/energy_dome.png',
     };
     return map[itemId] ?? 'src/assets/textures/item_stone_slabs.png';
   }

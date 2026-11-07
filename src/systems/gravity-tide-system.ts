@@ -3,6 +3,7 @@ import { World } from '../ecs/world';
 import { EventBus } from '../core/event-bus';
 import { Vec2 } from '../core/vec2';
 import { PhysicsService } from '../services/physics-service';
+import { RenderService } from '../services/render-service';
 import { Transform } from '../components/transform';
 import { PhysicsBody } from '../components/physics-body';
 import { Material } from '../components/material';
@@ -10,12 +11,11 @@ import {
   TideState,
   TidePhase,
   TideConfig,
-  AnomalyZone,
-  AnomalyType,
   EnergyDome,
 } from '../components/event-state';
 import { Structure, StructuralIntegrity } from '../components/construction';
 import { GravityAnchor } from '../components/construction';
+import { GravitySystem } from './gravity-system';
 
 /**
  * GravityTideSystem — глобальный менеджер состояний события «Гравитационный прилив».
@@ -25,7 +25,7 @@ import { GravityAnchor } from '../components/construction';
  *
  * Управляет:
  *   - переключением фаз по таймеру
- *   - сменой вектора глобальной гравитации в фазе 3
+ *   - реальной инверсией глобальной гравитации через GravitySystem
  *   - защитой построек через Гравитационные якори и Энергетические купола
  *   - Zerstörung незащищённых построек в фазе 3
  *   - спавном опасных существ и аномалий
@@ -43,10 +43,14 @@ export class GravityTideSystem extends System {
   private tideEntity: number | null = null;
   private tide: TideStateData | null = null;
   private _lastSpawnTime = 0;
+  private _cameraShakeTime = 0;
+  private _warningTintTime = 0;
 
   constructor(
     private eventBus: EventBus,
     private physics: PhysicsService,
+    private gravitySystem: GravitySystem,
+    private render: RenderService,
   ) {
     super();
   }
@@ -139,13 +143,15 @@ export class GravityTideSystem extends System {
         this.tide.phaseDuration = this.randomRange(TideConfig.aftermathDuration.min, TideConfig.aftermathDuration.max);
         this.tide.isSaveLocked = false;
         this.tide.cycleCount += 1;
+        // Восстанавливаем нормальную гравитацию после катастрофы
+        this.gravitySystem.setGlobalGravity(new Vec2(0, 9.81 * 60), 1, true);
         this.eventBus.emit('tide:catastrophe-end', { cycleCount: this.tide.cycleCount });
         break;
 
       case 'aftermath':
         this.tide.phase = 'stability';
         this.tide.phaseDuration = this.randomRange(TideConfig.stabilityDuration.min, TideConfig.stabilityDuration.max);
-        this.tide.globalGravityVector = this.tide.nextGravityVector.clone();
+        this.tide.globalGravityVector = new Vec2(0, 9.81 * 60);
         this.tide.nextGravityVector = this.randomGravityVector();
         this.eventBus.emit('tide:phase-changed', {
           from: oldPhase,
@@ -184,9 +190,67 @@ export class GravityTideSystem extends System {
     if (currentSecond % 5 === 0 && previousSecond % 5 !== 0) {
       this.eventBus.emit('tide:warning-pulse', { timeRemaining });
     }
+
+    // Пульсация красного оттенка при предупреждении
+    this._warningTintTime += dt;
+    const pulse = Math.sin(this._warningTintTime * 4) * 0.3 + 0.7;
+    if (this.render.app?.stage) {
+      this.render.app.stage.tint = 0xffffff * pulse;
+    }
   }
 
   /* ── Фаза 3: Катастрофа ───────────────────────────────────── */
+
+  private updateCatastrophePhase(world: World, dt: number): void {
+    if (!this.tide) return;
+
+    // Красный оттенок сцены при катастрофе
+    if (this.render.app?.stage) {
+      this.render.app.stage.tint = 0xff6666;
+    }
+
+    // Тряска камеры
+    this._cameraShakeTime += dt;
+    if (this._cameraShakeTime > 0.1) {
+      this._cameraShakeTime = 0;
+      const shakeX = (Math.random() - 0.5) * 8;
+      const shakeY = (Math.random() - 0.5) * 8;
+      if (this.render.camera) {
+        this.render.camera.x += shakeX;
+        this.render.camera.y += shakeY;
+      }
+    }
+
+    // Проверка целостности построек — защита через якоря и купола
+    this.checkStructureIntegrity(world, dt);
+
+    // Спавн опасных существ (периодически)
+    this.spawnCatastropheEntities(world, dt);
+
+    // Жидкости текут по новому вектору гравитации
+    this.applyFluidFlow(world, dt);
+  }
+
+  /* ── Фаза 4: Последствия ─────────────────────────────────── */
+
+  private updateAftermathPhase(world: World, dt: number): void {
+    if (!this.tide) return;
+
+    // Сбрасываем визуальные эффекты при выходе из катастрофы
+    if (this.render.app?.stage) {
+      this.render.app.stage.tint = 0xffffff;
+    }
+
+    if (this.tide.phaseTimer < 0.1) {
+      const mutations = world.query('world-mutation' as unknown as symbol);
+      const mutationList = mutations.map(({ components }) => components[0] as { id: string; type: string; applied: boolean });
+      const pending = mutationList.filter((m) => !m.applied);
+
+      if (pending.length > 0) {
+        this.eventBus.emit('tide:aftermath-start', { mutations: pending, cycleCount: this.tide.cycleCount });
+      }
+    }
+  }
 
   private applyGravityChange(world: World): void {
     if (!this.tide) return;
@@ -195,6 +259,9 @@ export class GravityTideSystem extends System {
     const newVector = this.tide.nextGravityVector.clone();
 
     this.tide.globalGravityVector = newVector;
+
+    // РЕАЛЬНАЯ инверсия гравитации через GravitySystem
+    this.gravitySystem.setGlobalGravity(newVector, 1, true);
 
     this.eventBus.emit('tide:gravity-changed', { oldVector, newVector });
 
@@ -209,19 +276,6 @@ export class GravityTideSystem extends System {
       const impulseForce = newVector.clone().mul(material.mass * 0.5);
       (this.physics as any).applyForce(bodyData.body, impulseForce);
     }
-  }
-
-  private updateCatastrophePhase(world: World, dt: number): void {
-    if (!this.tide) return;
-
-    // Проверка целостности построек — защита через якоря и купола
-    this.checkStructureIntegrity(world, dt);
-
-    // Спавн опасных существ (периодически)
-    this.spawnCatastropheEntities(world, dt);
-
-    // Жидкости текут по новому вектору гравитации
-    this.applyFluidFlow(world, dt);
   }
 
   /**
@@ -342,22 +396,6 @@ export class GravityTideSystem extends System {
       vector: this.tide!.globalGravityVector.clone(),
       dt,
     });
-  }
-
-  /* ── Фаза 4: Последствия ─────────────────────────────────── */
-
-  private updateAftermathPhase(world: World, dt: number): void {
-    if (!this.tide) return;
-
-    if (this.tide.phaseTimer < 0.1) {
-      const mutations = world.query('world-mutation' as unknown as symbol);
-      const mutationList = mutations.map(({ components }) => components[0] as { id: string; type: string; applied: boolean });
-      const pending = mutationList.filter((m) => !m.applied);
-
-      if (pending.length > 0) {
-        this.eventBus.emit('tide:aftermath-start', { mutations: pending, cycleCount: this.tide.cycleCount });
-      }
-    }
   }
 
   /* ── Публичное API ───────────────────────────────────────── */

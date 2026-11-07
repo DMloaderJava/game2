@@ -119,6 +119,10 @@ export class PhysicsService {
     Matter.Body.setVelocity(body, { x: vx, y: vy });
   }
 
+  setPosition(body: any, x: number, y: number): void {
+    Matter.Body.setPosition(body, { x, y });
+  }
+
   getVelocity(body: any): Vec2 {
     return new Vec2(body.velocity.x, body.velocity.y);
   }
