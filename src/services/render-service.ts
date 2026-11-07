@@ -161,6 +161,31 @@ export class RenderService {
     }
   }
 
+  /** Переключить анимацию у AnimatedSprite сущности (или текстуру у обычного Sprite). */
+  setSpriteAnimation(entity: number, textureUrls: string[], animationSpeed = 0.1): void {
+    const obj = this.displayObjects.get(entity);
+    if (!obj) return;
+    const textures = textureUrls
+      .map((u) => this.textures.get(u))
+      .filter((t): t is PIXI.Texture => t !== undefined);
+    if (textures.length === 0) return;
+    if (obj instanceof PIXI.AnimatedSprite) {
+      obj.textures = textures;
+      obj.animationSpeed = animationSpeed;
+      if (!obj.playing) obj.play();
+    } else if (obj instanceof PIXI.Sprite) {
+      obj.texture = textures[0];
+    }
+  }
+
+  /** Зеркалировать спрайт по X (отражение влево/вправо). */
+  flipSpriteX(entity: number, flipX: boolean): void {
+    const obj = this.displayObjects.get(entity);
+    if (!obj) return;
+    const scaleX = Math.abs(obj.scale.x);
+    obj.scale.x = flipX ? -scaleX : scaleX;
+  }
+
   destroy(): void {
     this.app?.destroy(true);
     this.app = null;

@@ -35,6 +35,7 @@ import { GravitySystem } from './systems/gravity-system';
 import { RenderSystem } from './systems/render-system';
 import { InventorySystem } from './systems/inventory-system';
 import { MiningSystem } from './systems/mining-system';
+import { PlayerAnimationSystem } from './systems/player-animation-system';
 
 import { Vec2 } from './core/vec2';
 
@@ -128,8 +129,8 @@ async function bootstrap(): Promise<void> {
   world.addComponent(player, Renderable as unknown as symbol, {
     texture: TEX.playerIdle, tint: 0xffffff, alpha: 1, visible: true, layer: 10,
   });
-  // Анимированный спрайт персонажа
-  const playerSprite = render.addSprite(player, TEX.playerIdle, 10, false, 1, 0.1);
+  // Анимированный спрайт персонажа (Idle кадры)
+  const playerSprite = render.addSprite(player, TEX.playerIdle, 10, true, 4, 0.15);
   if (playerSprite) {
     playerSprite.anchor.set(0.5, 0.5);
     playerSprite.width = PLAYER_RADIUS * 2;
@@ -265,6 +266,8 @@ async function bootstrap(): Promise<void> {
   const inventorySystem = new InventorySystem(eventBus, render);
   inventorySystem.setPlayerEntity(player);
   const miningSystem = new MiningSystem(physics, input, eventBus, inventorySystem, render);
+  const playerAnimationSystem = new PlayerAnimationSystem(render);
+  playerAnimationSystem.setPlayerEntity(player);
 
   world.addSystem(new InputSystem(input, eventBus));           // 10
   world.addSystem(new CharacterSystem(eventBus));              // 12
@@ -272,6 +275,7 @@ async function bootstrap(): Promise<void> {
   world.addSystem(new GravitySystem(physics, eventBus));       // 25
   world.addSystem(miningSystem);                               // 28 (добыча перед физикой)
   world.addSystem(new PhysicsSystem(physics, eventBus));       // 30
+  world.addSystem(playerAnimationSystem);                      // 35 (анимация игрока)
   world.addSystem(inventorySystem);                            // 50 (инвентарь)
   const renderSystem = new RenderSystem(render, physics);      // 40 (отрисовка после физики)
   world.addSystem(renderSystem);
