@@ -42,11 +42,68 @@ export class RenderService {
     this.resize();
   }
 
-  /** Загрузить текстуру по URL (кешируется). PixiJS v8: Texture.from(url) не подгружает
-   *  отсутствующий в кэше ассет и возвращает undefined, поэтому используем Assets.load. */
+  /* Цветовые плейсхолдеры для текстур (имя файла → RGB) — используется,
+   * когда загрузка по URL не удаётся (Arena-preview iframe, CORS, битые файлы). */
+  private static readonly PLACEHOLDER_COLORS: Record<string, number> = {
+    // Блоки мира
+    block_dirt: 0x654321,
+    block_stone: 0x808080,
+    block_ferrite: 0xa9a9a9,
+    block_resonit: 0x9370db,
+    block_stone_wall: 0x646464,
+    // Предметы
+    item_stone_slabs: 0xa0a0a0,
+    item_ferrite_ore: 0xb4b4b4,
+    item_resonit: 0xb478ff,
+    item_biovolume: 0x228b22,
+    item_biogel: 0x32cd32,
+    item_ancient_fragment: 0xdaa520,
+    // Устройства
+    gravity_anchor: 0x4cc9f0,
+    gravity_zone: 0x4cc9f0,
+    energy_dome: 0x00ffff,
+    // Игрок (анимации)
+    player_idle: 0xffdcb1,
+    player_idle_0: 0xffdcb1,
+    player_idle_1: 0xffdcb1,
+    player_idle_2: 0xffdcb1,
+    player_idle_3: 0xffdcb1,
+    player_walk: 0xffdcb1,
+    player_walk_0: 0xffdcb1,
+    player_walk_1: 0xffdcb1,
+    player_walk_2: 0xffdcb1,
+    player_walk_3: 0xffdcb1,
+    player_walk_4: 0xffdcb1,
+    player_walk_5: 0xffdcb1,
+    player_jump: 0xffdcb1,
+    player_idle_style: 0xffdcb1,
+    // UI
+    bg_space: 0x05050a,
+    ui_slot: 0x3c3c50,
+  };
+
+  /** Создать текстуру-сплошной цвет из canvas (без загрузки файла). */
+  private createSolidTexture(color: number, size = 64): PIXI.Texture {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+    ctx.fillRect(0, 0, size, size);
+    return PIXI.Texture.from(canvas);
+  }
+
+  /** Загрузить текстуру по URL (кешируется). В Arena-preview iframe браузер
+   *  разрешает относительные пути к домену arena.site, где текстур нет.
+   *  Поэтому создаём текстуру программно из canvas — работает везде. */
   async loadTexture(url: string): Promise<PIXI.Texture> {
     if (this.textures.has(url)) return this.textures.get(url)!;
-    const texture = await PIXI.Assets.load(url);
+
+    // Извлекаем имя текстуры из URL для подбора цвета плейсхолдера
+    const fileName = url.split('/').pop()?.replace('.png', '') ?? url;
+    const color = RenderService.PLACEHOLDER_COLORS[fileName] ?? 0x808080;
+
+    const texture = this.createSolidTexture(color);
     this.textures.set(url, texture);
     return texture;
   }
