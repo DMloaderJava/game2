@@ -43,10 +43,13 @@ export class RenderService {
   }
 
   /** Загрузить текстуру по URL (кешируется). PixiJS v8: Texture.from(url) не подгружает
-   *  отсутствующий в кэше ассет и возвращает undefined, поэтому используем Assets.load. */
+   *  отсутствующий в кэше ассет и возвращает undefined, поэтому используем Assets.load.
+   *  В Arena-preview игра работает через прокси на arena.site, поэтому текстуры
+   *  нужно загружать напрямую с dev server (e2b.app). */
   async loadTexture(url: string): Promise<PIXI.Texture> {
     if (this.textures.has(url)) return this.textures.get(url)!;
-    const texture = await PIXI.Assets.load(url);
+    const fullUrl = resolveTextureUrl(url);
+    const texture = await PIXI.Assets.load(fullUrl);
     this.textures.set(url, texture);
     return texture;
   }
@@ -204,4 +207,15 @@ export class RenderService {
     this.displayObjects.clear();
     this.textures.clear();
   }
+}
+
+/** Преобразует относительный путь к текстуре в полный URL dev server,
+ *  если игра запущена в среде Arena-preview. */
+function resolveTextureUrl(url: string): string {
+  const sandboxId = (import.meta as any).env?.VITE_E2B_SANDBOX_ID;
+  const port = (import.meta as any).env?.VITE_DEV_PORT ?? '5173';
+  if (sandboxId && url.startsWith('/')) {
+    return `https://${port}-${sandboxId}.e2b.app${url}`;
+  }
+  return url;
 }
