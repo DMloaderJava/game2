@@ -136,6 +136,11 @@ export class RenderService {
     this.camera.y += (screen.height / 2 - targetY - this.camera.y) * lerp;
   }
 
+  /** Получить текущую позицию камеры. */
+  getCameraPosition(): { x: number; y: number } {
+    return { x: this.camera?.x ?? 0, y: this.camera?.y ?? 0 };
+  }
+
   render(): void {
     this.app?.render();
   }

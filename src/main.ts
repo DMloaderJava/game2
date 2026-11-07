@@ -37,6 +37,7 @@ import { InventorySystem } from './systems/inventory-system';
 import { MiningSystem } from './systems/mining-system';
 import { PlayerAnimationSystem } from './systems/player-animation-system';
 import { CraftingSystem } from './systems/crafting-system';
+import { BuildingSystem } from './systems/building-system';
 
 import { Vec2 } from './core/vec2';
 
@@ -383,6 +384,8 @@ async function bootstrap(): Promise<void> {
   playerAnimationSystem.setPlayerEntity(player, PLAYER_IDLE_FRAMES, PLAYER_WALK_FRAMES, [TEX.playerJump]);
   const craftingSystem = new CraftingSystem(eventBus, render);
   craftingSystem.setPlayerEntity(player);
+  const buildingSystem = new BuildingSystem(render, eventBus);
+  buildingSystem.setPhysicsService(physics);
 
   world.addSystem(new InputSystem(input, eventBus));           // 10
   world.addSystem(new CharacterSystem(eventBus));              // 12
@@ -392,6 +395,7 @@ async function bootstrap(): Promise<void> {
   world.addSystem(new PhysicsSystem(physics, eventBus));       // 30
   world.addSystem(playerAnimationSystem);                      // 35 (анимация игрока)
   world.addSystem(craftingSystem);                             // 45 (крафт)
+  world.addSystem(buildingSystem);                             // 55 (строительство)
   world.addSystem(inventorySystem);                            // 50 (инвентарь)
   const renderSystem = new RenderSystem(render, physics);      // 40 (отрисовка после физики)
   world.addSystem(renderSystem);
@@ -407,6 +411,8 @@ async function bootstrap(): Promise<void> {
       const playerBody = physics.getBody(player);
       if (playerBody) {
         render.follow(playerBody.position.x, playerBody.position.y, 0.12);
+        const camPos = render.getCameraPosition();
+        buildingSystem.setCameraPosition(camPos.x, camPos.y);
       }
       renderSystem.draw(world, alpha);
       render.render();
@@ -452,6 +458,16 @@ async function bootstrap(): Promise<void> {
     }
     if (e.key === 'c' || e.key === 'C') {
       craftingSystem.toggle();
+    }
+    // Выбор предмета для строительства
+    if (e.key === '1') {
+      buildingSystem.selectItem('stone_wall');
+    }
+    if (e.key === '2') {
+      buildingSystem.selectItem('gravity_anchor');
+    }
+    if (e.key === 'Escape') {
+      buildingSystem.selectItem(null);
     }
   });
 
