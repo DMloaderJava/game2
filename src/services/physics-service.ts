@@ -1,52 +1,139 @@
-import { Vec2 } from '../core/vec2';
-
 /**
  * PhysicsService — обёртка над Matter.js.
- * Системы не вызывают Matter.js напрямую: через сервис проще заменить движок
- * и тестировать физику без отрисовки.
+ * Все типы Matter.js — any (без 선언ных типов).
  */
+import * as Matter from 'matter-js';
+import { Vec2 } from '../core/vec2';
+
 export class PhysicsService {
-  // matter.Engine и matter.World создаются при инициализации в main.ts
-  engine: unknown = null;
-  world: unknown = null;
+  engine: any = null;
+  world: any = null;
 
-  /** Создать rigid body и зарегистрировать его в симуляции. */
-  createBody(options: unknown): unknown {
-    // return Matter.Bodies.rectangle(x, y, w, h, options)
-    throw new Error('PhysicsService.createBody: инициализируйте Matter.js в main.ts');
+  private bodies = new Map<number, any>();
+
+  init(options: {
+    width: number;
+    height: number;
+    gravityX: number;
+    gravityY: number;
+  }): void {
+    this.engine = Matter.Engine.create({
+      gravity: { x: options.gravityX, y: options.gravityY },
+      enableSleeping: true,
+    });
+    this.world = this.engine.world;
+
+    const { width, height } = options;
+    const wallThickness = 40;
+
+    const floor = Matter.Bodies.rectangle(width / 2, height + wallThickness / 2, width, wallThickness, {
+      isStatic: true,
+      label: 'floor',
+    });
+    const ceiling = Matter.Bodies.rectangle(width / 2, -wallThickness / 2, width, wallThickness, {
+      isStatic: true,
+      label: 'ceiling',
+    });
+    const leftWall = Matter.Bodies.rectangle(-wallThickness / 2, height / 2, wallThickness, height, {
+      isStatic: true,
+      label: 'leftWall',
+    });
+    const rightWall = Matter.Bodies.rectangle(width + wallThickness / 2, height / 2, wallThickness, height, {
+      isStatic: true,
+      label: 'rightWall',
+    });
+
+    Matter.World.add(this.world, [floor, ceiling, leftWall, rightWall]);
   }
 
-  /** Удалить тело из симуляции. */
-  removeBody(body: unknown): void {
-    // Matter.Composite.remove(this.world, body)
-  }
-
-  /** Установить гравитацию для всего мира. */
-  setGravity(x: number, y: number): void {
-    // this.engine.gravity = { x, y }
-  }
-
-  /** Один шаг симуляции. */
   step(delta: number): void {
-    // Matter.Engine.update(this.engine, delta, 1)
+    if (this.engine) {
+      Matter.Engine.update(this.engine, delta * 1000, 1);
+    }
   }
 
-  /**
-   * Приложить силу к телу в его центре масс (без вращательного момента).
-   * Реализация Matter.js: Matter.Body.applyForce(body, body.position, force)
-   */
-  applyForce(body: unknown, force: Vec2): void {
-    // Matter.Body.applyForce(body, body.position, { x: force.x, y: force.y })
+  createRectangleBody(
+    entity: number,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    options: any = {},
+  ): any {
+    if (!this.world) throw new Error('Physics world not initialized');
+    const body = Matter.Bodies.rectangle(x, y, width, height, {
+      ...options,
+      label: options.label || `entity-${entity}`,
+    });
+    Matter.World.add(this.world, body);
+    this.bodies.set(entity, body);
+    return body;
   }
 
-  /** Найти все тела в точке (для подбора/строительства). */
-  queryPoint(x: number, y: number): unknown[] {
-    // Matter.Query.point(this.world.bodies, { x, y })
-    return [];
+  createCircleBody(
+    entity: number,
+    x: number,
+    y: number,
+    radius: number,
+    options: any = {},
+  ): any {
+    if (!this.world) throw new Error('Physics world not initialized');
+    const body = Matter.Bodies.circle(x, y, radius, {
+      ...options,
+      label: options.label || `entity-${entity}`,
+    });
+    Matter.World.add(this.world, body);
+    this.bodies.set(entity, body);
+    return body;
   }
 
-  /** Raycast для проверки видимости ИИ. */
-  raycast(start: { x: number; y: number }, end: { x: number; y: number }): unknown[] {
-    return [];
+  removeBody(entity: number): void {
+    const body = this.bodies.get(entity);
+    if (body && this.world) {
+      Matter.World.remove(this.world, body);
+    }
+    this.bodies.delete(entity);
+  }
+
+  getBody(entity: number): any {
+    return this.bodies.get(entity);
+  }
+
+  applyForce(body: any, force: Vec2): void {
+    Matter.Body.applyForce(body, body.position, { x: force.x, y: force.y });
+  }
+
+  setGravity(x: number, y: number): void {
+    if (this.engine) {
+      this.engine.gravity.x = x;
+      this.engine.gravity.y = y;
+    }
+  }
+
+  queryPoint(x: number, y: number): any[] {
+    if (!this.world) return [];
+    return Matter.Query.point(this.world.bodies, { x, y });
+  }
+
+  setVelocity(body: any, vx: number, vy: number): void {
+    Matter.Body.setVelocity(body, { x: vx, y: vy });
+  }
+
+  getVelocity(body: any): Vec2 {
+    return new Vec2(body.velocity.x, body.velocity.y);
+  }
+
+  setAngularVelocity(body: any, velocity: number): void {
+    Matter.Body.setAngularVelocity(body, velocity);
+  }
+
+  destroy(): void {
+    if (this.engine) {
+      Matter.World.clear(this.engine.world);
+      Matter.Engine.clear(this.engine);
+      this.engine = null;
+      this.world = null;
+    }
+    this.bodies.clear();
   }
 }

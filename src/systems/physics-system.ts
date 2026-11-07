@@ -1,39 +1,37 @@
 import { System } from '../ecs/system';
 import { World } from '../ecs/world';
 import { EventBus } from '../core/event-bus';
-import { PhysicsService } from '../services/physics-service';
-import { Vec2 } from '../core/vec2';
 import { Transform } from '../components/transform';
 import { PhysicsBody } from '../components/physics-body';
 import { GravityForce } from '../components/gravity';
 import { Material } from '../components/material';
+import { Vec2 } from '../core/vec2';
 
 /**
- * PhysicsSystem — шаг симуляции Matter.js, синхронизация тел с ECS и
- * приложение сил гравитации.
- *
- * Порядок работы в кадре:
- *   1. Приложить накопленные силы GravityForce к телам (F = m * g).
- *   2. Один шаг Matter.js Engine.update.
- *   3. Синхронизировать позиции тел обратно в компоненты Transform.
- *   4. Эмитировать события коллизий в EventBus.
- *
- * Приоритет 30 — после GravitySystem (25), чтобы гравитация應лась
- * перед шагом симуляции.
+ * PhysicsSystem — шаг Matter.js, приложение сил гравитации, синхронизация тел с ECS.
+ * Приоритет 30 — после GravitySystem (25).
  */
 export class PhysicsSystem extends System {
   readonly priority = 30;
   readonly required = [Transform, PhysicsBody];
 
+  private worldRef!: World;
+
   constructor(
-    private physics: PhysicsService,
+    private physics: {
+      step: (dt: number) => void;
+      applyForce: (body: unknown, force: Vec2) => void;
+      getBody: (e: number) => { position: { x: number; y: number }; angle: number } | undefined;
+    },
     private eventBus: EventBus,
   ) {
     super();
   }
 
   update(world: World, dt: number): void {
-    // 1. Приложить силы гравитации (и другие накопленные силы) к телам.
+    this.worldRef = world;
+
+    // 1. Приложить силы гравитации к телам
     const actors = world.query(PhysicsBody, GravityForce, Material);
     for (const { entity, components } of actors) {
       const bodyData = components[0] as { body: unknown };
@@ -42,29 +40,30 @@ export class PhysicsSystem extends System {
 
       if (!forceData.dirty || !bodyData.body) continue;
 
-      // F = m * g, применяется в центре масс — без вращательного момента.
       const force = forceData.vector.mul(material.mass);
-      (this.physics as any).applyForce(bodyData.body, force);
+      this.physics.applyForce(bodyData.body, force);
 
       forceData.dirty = false;
       world.addComponent(entity, GravityForce as unknown as symbol, forceData);
     }
 
-    // 2. Один шаг физической симуляции.
+    // 2. Один шаг физической симуляции
     this.physics.step(dt);
 
-    // 3. Синхронизировать позиции из Matter.js тел в компоненты Transform.
+    // 3. Синхронизировать позиции тел в компоненты Transform
     const bodies = world.query(Transform, PhysicsBody);
     for (const { entity, components } of bodies) {
       const transform = components[0] as { x: number; y: number; rotation: number };
-      const body = (components[1] as { body: unknown }).body;
+      const body = (components[1] as { body: { position: { x: number; y: number }; angle: number } | undefined }).body;
 
-      // transform.x = body.position.x;
-      // transform.y = body.position.y;
-      // transform.rotation = body.angle;
+      if (body) {
+        transform.x = body.position.x;
+        transform.y = body.position.y;
+        transform.rotation = body.angle;
+      }
     }
 
-    // 4. События коллизий -> EventBus (для урона, звуков, триггеров, разрушений).
+    // 4. События коллизий (заглушка для будущего DamageSystem)
     // this.eventBus.emit('collision-start', { bodyA, bodyB });
   }
 }
