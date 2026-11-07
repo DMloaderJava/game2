@@ -43,13 +43,10 @@ export class RenderService {
   }
 
   /** Загрузить текстуру по URL (кешируется). PixiJS v8: Texture.from(url) не подгружает
-   *  отсутствующий в кэше ассет и возвращает undefined, поэтому используем Assets.load.
-   *  В Arena-preview игра работает через прокси на arena.site, поэтому текстуры
-   *  нужно загружать напрямую с dev server (e2b.app). */
+   *  отсутствующий в кэше ассет и возвращает undefined, поэтому используем Assets.load. */
   async loadTexture(url: string): Promise<PIXI.Texture> {
     if (this.textures.has(url)) return this.textures.get(url)!;
-    const fullUrl = resolveTextureUrl(url);
-    const texture = await PIXI.Assets.load(fullUrl);
+    const texture = await PIXI.Assets.load(url);
     this.textures.set(url, texture);
     return texture;
   }
@@ -207,24 +204,4 @@ export class RenderService {
     this.displayObjects.clear();
     this.textures.clear();
   }
-}
-
-/** Преобразует относительный путь к текстуре в полный URL dev server,
- *  если игра запущена в среде Arena-preview (через arena.site/arena.ai прокси).
- *  В этом случае браузер запрашивает статику с arena.site, где текстур нет,
- *  поэтому нужно явно указывать URL dev server (e2b.app). */
-function resolveTextureUrl(url: string): string {
-  // Sandbox ID текущего арены-песочницы (известен фиксированно для этой сессии)
-  const sandboxId = 'iusof3fx956iwhe0c1x3i';
-  const port = '5173';
-  // Если уже на e2b.app или localhost — относительный путь сработает сам
-  const host = typeof window !== 'undefined' ? window.location.hostname : '';
-  if (host.includes('e2b.app') || host.includes('localhost') || host === '127.0.0.1') {
-    return url;
-  }
-  // Иначе —Arena-preview: текстуры загружаем напрямую с dev server
-  if (url.startsWith('/')) {
-    return `https://${port}-${sandboxId}.e2b.app${url}`;
-  }
-  return url;
 }

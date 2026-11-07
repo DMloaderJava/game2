@@ -8,6 +8,12 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     allowedHosts: true,
+    cors: true,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+      'Access-Control-Allow-Headers': 'X-Requested-With, content-type, Authorization',
+    },
   },
   build: {
     outDir: 'dist',
