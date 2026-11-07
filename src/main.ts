@@ -38,6 +38,8 @@ import { MiningSystem } from './systems/mining-system';
 import { PlayerAnimationSystem } from './systems/player-animation-system';
 import { CraftingSystem } from './systems/crafting-system';
 import { BuildingSystem } from './systems/building-system';
+import { GravityTideSystem } from './systems/gravity-tide-system';
+import { TideConfig } from './components/event-state';
 
 import { Vec2 } from './core/vec2';
 
@@ -98,6 +100,14 @@ const PLAYER_WALK_FRAMES = [
   TEX.playerWalk4,
   TEX.playerWalk5,
 ];
+
+// ============================================================================
+// Конфигурация Гравитационного Прилива (таймер 45+15+60 секунд)
+// ============================================================================
+TideConfig.stabilityDuration = { min: 45, max: 45 };
+TideConfig.warningDuration = { min: 15, max: 15 };
+TideConfig.catastropheDuration = { min: 60, max: 60 };
+TideConfig.aftermathDuration = { min: 5, max: 5 };
 
 // ============================================================================
 // 1. Движок и сервисы (асинхронная инициализация PixiJS v8)
@@ -386,6 +396,8 @@ async function bootstrap(): Promise<void> {
   craftingSystem.setPlayerEntity(player);
   const buildingSystem = new BuildingSystem(render, eventBus);
   buildingSystem.setPhysicsService(physics);
+  const tideSystem = new GravityTideSystem(eventBus, physics);
+  tideSystem.setNextGravityVector(0, -9.81 * 60); // инверсия гравитации вверх при прилив
 
   world.addSystem(new InputSystem(input, eventBus));           // 10
   world.addSystem(new CharacterSystem(eventBus));              // 12
@@ -396,6 +408,7 @@ async function bootstrap(): Promise<void> {
   world.addSystem(playerAnimationSystem);                      // 35 (анимация игрока)
   world.addSystem(craftingSystem);                             // 45 (крафт)
   world.addSystem(buildingSystem);                             // 55 (строительство)
+  world.addSystem(tideSystem);                                 // 70 (гравитационный прилив)
   world.addSystem(inventorySystem);                            // 50 (инвентарь)
   const renderSystem = new RenderSystem(render, physics);      // 40 (отрисовка после физики)
   world.addSystem(renderSystem);
@@ -532,7 +545,18 @@ async function bootstrap(): Promise<void> {
         if (stBarEl) stBarEl.className = 'stat-fill' + (stats.exhausted ? ' danger' : stPct < 25 ? ' warn' : '');
       }
     }
-    if (tideValEl) tideValEl.textContent = 'Стабильность';
+    // Фаза прилива
+    const tidePhase = tideSystem.getCurrentPhase();
+    const tidePhaseNames: Record<string, string> = {
+      stability: 'Стабильность',
+      warning: 'ПРЕДУПРЕЖДЕНИЕ',
+      catastrophe: 'КАТАСТРОФА — ГРАВИТАЦИЯ ИНВЕРСИЯ',
+      aftermath: 'Последствия',
+    };
+    if (tideValEl) tideValEl.textContent = tidePhaseNames[tidePhase] || tidePhase;
+    if (tideValEl) {
+      tideValEl.style.color = tidePhase === 'stability' ? '#7c93ff' : tidePhase === 'warning' ? '#ff9900' : '#ff3333';
+    }
   }
 
   setInterval(updateHUD, 100);
@@ -541,6 +565,17 @@ async function bootstrap(): Promise<void> {
   // Слушаем события подбора предмета для тоста
   eventBus.on('inventory:item-picked-up', (e: any) => {
     showPickupToast(e.itemId, e.count);
+  });
+
+  // Слушаем события прилива для HUD
+  eventBus.on('tide:phase-changed', (e: any) => {
+    showPickupToast(`Прилив: ${e.to}`, 0);
+  });
+  eventBus.on('tide:warning-start', (e: any) => {
+    showPickupToast(`Внимание: гравитационный прилив через ${Math.floor(e.timeRemaining)}с`, 0);
+  });
+  eventBus.on('tide:catastrophe-start', (e: any) => {
+    showPickupToast('КАТАСТРОФА: гравитация инвертирована! Найдите укрытие у Якоря!', 0);
   });
 }
 

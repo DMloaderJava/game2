@@ -391,6 +391,12 @@ export class GravityTideSystem extends System {
     });
   }
 
+  /** Установить вектор следующей гравитации (для гарантированной инверсии). */
+  setNextGravityVector(x: number, y: number): void {
+    if (!this.tide) return;
+    this.tide.nextGravityVector = new Vec2(x, y);
+  }
+
   /* ── Вспомогательное ─────────────────────────────────────── */
 
   private randomRange(min: number, max: number): number {

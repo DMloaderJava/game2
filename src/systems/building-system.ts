@@ -17,6 +17,7 @@ import { Material } from '../components/material';
 import { Mineable, MineableData } from '../components/mining';
 import { TileType } from '../components/world';
 import { Vec2 } from '../core/vec2';
+import { GravityAnchor } from '../components/construction';
 
 const GRID_SIZE = 64;
 
@@ -309,6 +310,16 @@ export class BuildingSystem extends System {
     // Mineable (для возможности разрушить постройку)
     if (item.mineable) {
       this.worldRef.addComponent(entity, Mineable as unknown as symbol, item.mineable);
+    }
+
+    // Гравитационный якорь — добавляем компонент с радиусом защиты
+    if (item.itemId === 'gravity_anchor') {
+      this.worldRef.addComponent(entity, GravityAnchor as unknown as symbol, {
+        active: true,
+        radius: 250,
+        energyPerSecond: 0,
+        anchoredEntities: [],
+      });
     }
 
     // Событие
