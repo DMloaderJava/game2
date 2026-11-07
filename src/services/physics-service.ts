@@ -1,3 +1,5 @@
+import { Vec2 } from '../core/vec2';
+
 /**
  * PhysicsService — обёртка над Matter.js.
  * Системы не вызывают Matter.js напрямую: через сервис проще заменить движок
@@ -27,6 +29,14 @@ export class PhysicsService {
   /** Один шаг симуляции. */
   step(delta: number): void {
     // Matter.Engine.update(this.engine, delta, 1)
+  }
+
+  /**
+   * Приложить силу к телу в его центре масс (без вращательного момента).
+   * Реализация Matter.js: Matter.Body.applyForce(body, body.position, force)
+   */
+  applyForce(body: unknown, force: Vec2): void {
+    // Matter.Body.applyForce(body, body.position, { x: force.x, y: force.y })
   }
 
   /** Найти все тела в точке (для подбора/строительства). */
