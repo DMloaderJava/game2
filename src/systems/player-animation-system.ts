@@ -10,27 +10,6 @@ import { Transform } from '../components/transform';
 import { CharacterController, CharacterControllerData } from '../components/character';
 import { CharacterStats, CharacterStatsData } from '../components/character';
 
-/** Кадра анимации простоя. */
-const IDLE_FRAMES = [
-  'src/assets/textures/player_idle_0.png',
-  'src/assets/textures/player_idle_1.png',
-  'src/assets/textures/player_idle_2.png',
-  'src/assets/textures/player_idle_3.png',
-];
-
-/** Кадра анимации ходьбы. */
-const WALK_FRAMES = [
-  'src/assets/textures/player_walk_0.png',
-  'src/assets/textures/player_walk_1.png',
-  'src/assets/textures/player_walk_2.png',
-  'src/assets/textures/player_walk_3.png',
-  'src/assets/textures/player_walk_4.png',
-  'src/assets/textures/player_walk_5.png',
-];
-
-/** Кадра анимации прыжка/падения (fallback на одно изображение пока кадры не добавлены). */
-const JUMP_FRAMES = ['src/assets/textures/player_jump.png'];
-
 type AnimName = 'idle' | 'walk' | 'jump';
 
 export class PlayerAnimationSystem extends System {
@@ -41,16 +20,22 @@ export class PlayerAnimationSystem extends System {
   private playerEntity: number | null = null;
   private currentAnimation: AnimName | null = null;
   private lastDirection = 1; // 1 = вправо, -1 = влево
+  private idleFrames: string[] = [];
+  private walkFrames: string[] = [];
+  private jumpFrames: string[] = [];
 
   constructor(private render: RenderService) {
     super();
   }
 
-  /** Привязать игрока (вызывается из main.ts после создания сущности). */
-  setPlayerEntity(entity: number): void {
+  /** Привязать игрока с кадрами анимации (вызывается из main.ts после создания сущности). */
+  setPlayerEntity(entity: number, idleFrames: string[], walkFrames: string[], jumpFrames: string[]): void {
     this.playerEntity = entity;
+    this.idleFrames = idleFrames;
+    this.walkFrames = walkFrames;
+    this.jumpFrames = jumpFrames;
     // Инициализируем анимацию простоя
-    this.render.setSpriteAnimation(entity, IDLE_FRAMES, 0.15);
+    this.render.setSpriteAnimation(entity, idleFrames, 0.15);
     this.currentAnimation = 'idle';
   }
 
@@ -79,13 +64,13 @@ export class PlayerAnimationSystem extends System {
         this.currentAnimation = animation;
         switch (animation) {
           case 'idle':
-            this.render.setSpriteAnimation(entity, IDLE_FRAMES, 0.15);
+            this.render.setSpriteAnimation(entity, this.idleFrames, 0.15);
             break;
           case 'walk':
-            this.render.setSpriteAnimation(entity, WALK_FRAMES, 0.2);
+            this.render.setSpriteAnimation(entity, this.walkFrames, 0.2);
             break;
           case 'jump':
-            this.render.setSpriteAnimation(entity, JUMP_FRAMES, 0.15);
+            this.render.setSpriteAnimation(entity, this.jumpFrames, 0.15);
             break;
         }
       }

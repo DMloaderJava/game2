@@ -40,25 +40,62 @@ import { PlayerAnimationSystem } from './systems/player-animation-system';
 import { Vec2 } from './core/vec2';
 
 // ============================================================================
-// Текстуры
+// Текстуры (все кадры анимации предзагружаются)
 // ============================================================================
 const TEX = {
+  // Игрок — базовые (для совместимости)
   playerIdle: 'src/assets/textures/player_idle.png',
   playerWalk: 'src/assets/textures/player_walk.png',
   playerJump: 'src/assets/textures/player_jump.png',
+  // Игрок — кадры анимации (Idle)
+  playerIdle0: 'src/assets/textures/player_idle_0.png',
+  playerIdle1: 'src/assets/textures/player_idle_1.png',
+  playerIdle2: 'src/assets/textures/player_idle_2.png',
+  playerIdle3: 'src/assets/textures/player_idle_3.png',
+  // Игрок — кадры анимации (Walk)
+  playerWalk0: 'src/assets/textures/player_walk_0.png',
+  playerWalk1: 'src/assets/textures/player_walk_1.png',
+  playerWalk2: 'src/assets/textures/player_walk_2.png',
+  playerWalk3: 'src/assets/textures/player_walk_3.png',
+  playerWalk4: 'src/assets/textures/player_walk_4.png',
+  playerWalk5: 'src/assets/textures/player_walk_5.png',
+  // Блоки мира
   blockDirt: 'src/assets/textures/block_dirt.png',
   blockStone: 'src/assets/textures/block_stone.png',
   blockFerrite: 'src/assets/textures/block_ferrite.png',
   blockResonit: 'src/assets/textures/block_resonit.png',
+  blockStoneWall: 'src/assets/textures/block_stone_wall.png',
+  // Предметы
   itemStoneSlabs: 'src/assets/textures/item_stone_slabs.png',
   itemFerriteOre: 'src/assets/textures/item_ferrite_ore.png',
   itemResonit: 'src/assets/textures/item_resonit.png',
   itemBiovolume: 'src/assets/textures/item_biovolume.png',
   itemBiogel: 'src/assets/textures/item_biogel.png',
   itemAncientFragment: 'src/assets/textures/item_ancient_fragment.png',
+  // Устройства
+  gravityAnchor: 'src/assets/textures/gravity_anchor.png',
+  gravityZone: 'src/assets/textures/gravity_zone.png',
+  // UI
   bgSpace: 'src/assets/textures/bg_space.png',
   uiSlot: 'src/assets/textures/ui_slot.png',
 } as const;
+
+// Массивы кадров анимации для PlayerAnimationSystem
+const PLAYER_IDLE_FRAMES = [
+  TEX.playerIdle0,
+  TEX.playerIdle1,
+  TEX.playerIdle2,
+  TEX.playerIdle3,
+];
+
+const PLAYER_WALK_FRAMES = [
+  TEX.playerWalk0,
+  TEX.playerWalk1,
+  TEX.playerWalk2,
+  TEX.playerWalk3,
+  TEX.playerWalk4,
+  TEX.playerWalk5,
+];
 
 // ============================================================================
 // 1. Движок и сервисы (асинхронная инициализация PixiJS v8)
@@ -127,10 +164,10 @@ async function bootstrap(): Promise<void> {
     gravityScale: 1.0, isSleeping: false,
   });
   world.addComponent(player, Renderable as unknown as symbol, {
-    texture: TEX.playerIdle, tint: 0xffffff, alpha: 1, visible: true, layer: 10,
+    texture: TEX.playerIdle0, tint: 0xffffff, alpha: 1, visible: true, layer: 10,
   });
   // Анимированный спрайт персонажа (Idle кадры)
-  const playerSprite = render.addSprite(player, TEX.playerIdle, 10, true, 4, 0.15);
+  const playerSprite = render.addSprite(player, TEX.playerIdle0, 10, true, 4, 0.15);
   if (playerSprite) {
     playerSprite.anchor.set(0.5, 0.5);
     playerSprite.width = PLAYER_RADIUS * 2;
@@ -177,19 +214,74 @@ async function bootstrap(): Promise<void> {
   // Инструмент по умолчанию — каменная кирка
   world.addComponent(player, MiningTool as unknown as symbol, Tools.stone_pickaxe());
 
-  // ============================================================================
-  // 4. Уровень: земя и блоки (только спрайты с текстурами)
-  // ============================================================================
+// ============================================================================
+// 4. Уровень: широкий мир 3000px со стенами, рельефом и залежами руды
+// ============================================================================
+  const LEVEL_WIDTH = 3000;
   const GROUND_Y = 500;
   const GROUND_HEIGHT = 64;
+  const WALL_THICKNESS = 80;
 
+  // Левая граница мира (стена)
+  const leftWall = world.createEntity();
+  world.addComponent(leftWall, Transform as unknown as symbol, {
+    x: -WALL_THICKNESS / 2, y: GROUND_Y + GROUND_HEIGHT / 2,
+    rotation: 0, scaleX: 1, scaleY: 1,
+  });
+  world.addComponent(leftWall, PhysicsBody as unknown as symbol, {
+    body: physics.createRectangleBody(leftWall, -WALL_THICKNESS / 2, GROUND_Y + GROUND_HEIGHT / 2, WALL_THICKNESS, GROUND_HEIGHT + 400, {
+      isStatic: true, label: 'leftWall',
+    }),
+    gravityScale: 0, isSleeping: true,
+  });
+  world.addComponent(leftWall, Renderable as unknown as symbol, {
+    texture: TEX.blockStoneWall, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
+  });
+  const leftWallSprite = render.addSprite(leftWall, TEX.blockStoneWall, 5);
+  if (leftWallSprite) {
+    leftWallSprite.width = WALL_THICKNESS;
+    leftWallSprite.height = GROUND_HEIGHT + 400;
+  }
+  world.addComponent(leftWall, Material as unknown as symbol, {
+    mass: 0, density: 5000, strength: 50000, durability: 1,
+    sailArea: 0, airResistance: 1, state: 'solid',
+    temperature: 20, burnable: false, flammable: false, thermalConductivity: 2.0,
+  });
+
+  // Правая граница мира (стена)
+  const rightWall = world.createEntity();
+  world.addComponent(rightWall, Transform as unknown as symbol, {
+    x: LEVEL_WIDTH + WALL_THICKNESS / 2, y: GROUND_Y + GROUND_HEIGHT / 2,
+    rotation: 0, scaleX: 1, scaleY: 1,
+  });
+  world.addComponent(rightWall, PhysicsBody as unknown as symbol, {
+    body: physics.createRectangleBody(rightWall, LEVEL_WIDTH + WALL_THICKNESS / 2, GROUND_Y + GROUND_HEIGHT / 2, WALL_THICKNESS, GROUND_HEIGHT + 400, {
+      isStatic: true, label: 'rightWall',
+    }),
+    gravityScale: 0, isSleeping: true,
+  });
+  world.addComponent(rightWall, Renderable as unknown as symbol, {
+    texture: TEX.blockStoneWall, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
+  });
+  const rightWallSprite = render.addSprite(rightWall, TEX.blockStoneWall, 5);
+  if (rightWallSprite) {
+    rightWallSprite.width = WALL_THICKNESS;
+    rightWallSprite.height = GROUND_HEIGHT + 400;
+  }
+  world.addComponent(rightWall, Material as unknown as symbol, {
+    mass: 0, density: 5000, strength: 50000, durability: 1,
+    sailArea: 0, airResistance: 1, state: 'solid',
+    temperature: 20, burnable: false, flammable: false, thermalConductivity: 2.0,
+  });
+
+  // Земля — сплошная платформа на всю ширину уровня
   const groundEntity = world.createEntity();
   world.addComponent(groundEntity, Transform as unknown as symbol, {
-    x: window.innerWidth / 2, y: GROUND_Y + GROUND_HEIGHT / 2,
+    x: LEVEL_WIDTH / 2, y: GROUND_Y + GROUND_HEIGHT / 2,
     rotation: 0, scaleX: 1, scaleY: 1,
   });
   world.addComponent(groundEntity, PhysicsBody as unknown as symbol, {
-    body: physics.createRectangleBody(groundEntity, window.innerWidth / 2, GROUND_Y + GROUND_HEIGHT / 2, window.innerWidth, GROUND_HEIGHT, {
+    body: physics.createRectangleBody(groundEntity, LEVEL_WIDTH / 2, GROUND_Y + GROUND_HEIGHT / 2, LEVEL_WIDTH, GROUND_HEIGHT, {
       isStatic: true, label: 'ground',
     }),
     gravityScale: 0, isSleeping: true,
@@ -199,7 +291,7 @@ async function bootstrap(): Promise<void> {
   });
   const groundSprite = render.addSprite(groundEntity, TEX.blockDirt, 5);
   if (groundSprite) {
-    groundSprite.width = window.innerWidth;
+    groundSprite.width = LEVEL_WIDTH;
     groundSprite.height = GROUND_HEIGHT;
   }
   world.addComponent(groundEntity, Material as unknown as symbol, {
@@ -208,14 +300,34 @@ async function bootstrap(): Promise<void> {
     temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.5,
   });
 
-  // Каменные блоки
-  const blocks = [
-    { x: 300, y: GROUND_Y - 64, w: 64, h: 64, type: 'stone' as TileType, tex: TEX.blockStone },
-    { x: 420, y: GROUND_Y - 128, w: 64, h: 64, type: 'ferrite_ore' as TileType, tex: TEX.blockFerrite },
-    { x: 560, y: GROUND_Y - 64, w: 64, h: 64, type: 'stone' as TileType, tex: TEX.blockStone },
-    { x: 700, y: GROUND_Y - 192, w: 64, h: 64, type: 'resonit_ore' as TileType, tex: TEX.blockResonit },
-    { x: 840, y: GROUND_Y - 64, w: 64, h: 64, type: 'stone' as TileType, tex: TEX.blockStone },
+  // Каменные блоки и руды — равномерно распределены по уровню
+  const blocks: Array<{ x: number; y: number; w: number; h: number; type: TileType; tex: string }> = [];
+  const oreTypes: Array<{ type: TileType; tex: string; weight: number }> = [
+    { type: 'stone' as TileType, tex: TEX.blockStone, weight: 5 },
+    { type: 'stone' as TileType, tex: TEX.blockStone, weight: 5 },
+    { type: 'ferrite_ore' as TileType, tex: TEX.blockFerrite, weight: 2 },
+    { type: 'resonit_ore' as TileType, tex: TEX.blockResonit, weight: 1 },
   ];
+
+  // Генерируем блоки каждые ~200px с вариацией высоты
+  for (let bx = 200; bx < LEVEL_WIDTH - 200; bx += 200) {
+    const roll = Math.floor(Math.random() * 12);
+    let ore: { type: TileType; tex: string } | null = null;
+    if (roll < 2) ore = oreTypes[2]; // ferrite_ore
+    else if (roll < 3) ore = oreTypes[3]; // resonit_ore
+    else ore = oreTypes[Math.floor(Math.random() * 2)]; // stone
+
+    const offsetY = (Math.random() - 0.5) * 60; // вариация высоты ±30px
+    const y = GROUND_Y - 64 + offsetY;
+
+    blocks.push({
+      x: bx + 40 + Math.random() * 120, // вариация по X внутри ячейки
+      y,
+      w: 64, h: 64,
+      type: ore.type,
+      tex: ore.tex,
+    });
+  }
 
   blocks.forEach((b, i) => {
     const entity = world.createEntity();
@@ -267,7 +379,7 @@ async function bootstrap(): Promise<void> {
   inventorySystem.setPlayerEntity(player);
   const miningSystem = new MiningSystem(physics, input, eventBus, inventorySystem, render);
   const playerAnimationSystem = new PlayerAnimationSystem(render);
-  playerAnimationSystem.setPlayerEntity(player);
+  playerAnimationSystem.setPlayerEntity(player, PLAYER_IDLE_FRAMES, PLAYER_WALK_FRAMES, [TEX.playerJump]);
 
   world.addSystem(new InputSystem(input, eventBus));           // 10
   world.addSystem(new CharacterSystem(eventBus));              // 12
@@ -318,7 +430,7 @@ async function bootstrap(): Promise<void> {
   input.bindAction('up', 'w');
   input.bindAction('down', 's');
   input.bindAction('jump', ' ');
-  input.bindAction('interact', 'e');
+  // E — только копирование/добыча (подбор ресурса происходит автоматически при приближении)
 
   // Инвентарь по клавишам I или Tab
   function toggleInventory(): void {
