@@ -56,7 +56,7 @@ export class MiningSystem extends System {
       if (ctrl.state === 'Dead') continue;
 
       // --- Автоподбор лута при приближении игрока (каждый кадр) ---
-      this.inventorySystem.pickupNearby(transform.x, transform.y, 70);
+      this.inventorySystem.pickupNearby(world, transform.x, transform.y, 70);
 
       // --- Добыча блока только при нажатии E ---
       const ePressed = this.input.isKeyDown('e');

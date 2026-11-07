@@ -169,9 +169,9 @@ export class InventorySystem extends System {
 
   /* ── Публичный API ───────────────────────────────────────────── */
 
-  addItem(itemId: string, count: number, quality?: number): number {
+  addItem(world: World, itemId: string, count: number, quality?: number): number {
     if (!this.playerEntity) return count;
-    const inv = this.worldRef.getComponent(this.playerEntity, Inventory as unknown as symbol) as InventoryData | undefined;
+    const inv = world.getComponent(this.playerEntity, Inventory as unknown as symbol) as InventoryData | undefined;
     if (!inv) return count;
 
     let remaining = count;
@@ -199,14 +199,14 @@ export class InventorySystem extends System {
       }
     }
 
-    this.worldRef.addComponent(this.playerEntity, Inventory as unknown as symbol, inv);
+    world.addComponent(this.playerEntity, Inventory as unknown as symbol, inv);
     this.eventBus.emit('inventory:item-added', { entity: this.playerEntity, itemId, count: count - remaining });
     return remaining;
   }
 
-  removeItem(itemId: string, count: number): number {
+  removeItem(world: World, itemId: string, count: number): number {
     if (!this.playerEntity) return 0;
-    const inv = this.worldRef.getComponent(this.playerEntity, Inventory as unknown as symbol) as InventoryData | undefined;
+    const inv = world.getComponent(this.playerEntity, Inventory as unknown as symbol) as InventoryData | undefined;
     if (!inv) return 0;
 
     let remaining = count;
@@ -221,14 +221,14 @@ export class InventorySystem extends System {
       }
     }
 
-    this.worldRef.addComponent(this.playerEntity, Inventory as unknown as symbol, inv);
+    world.addComponent(this.playerEntity, Inventory as unknown as symbol, inv);
     this.eventBus.emit('inventory:item-removed', { entity: this.playerEntity, itemId, count: count - remaining });
     return count - remaining;
   }
 
-  hasItem(itemId: string, count: number): boolean {
+  hasItem(world: World, itemId: string, count: number): boolean {
     if (!this.playerEntity) return false;
-    const inv = this.worldRef.getComponent(this.playerEntity, Inventory as unknown as symbol) as InventoryData | undefined;
+    const inv = world.getComponent(this.playerEntity, Inventory as unknown as symbol) as InventoryData | undefined;
     if (!inv) return false;
 
     let total = 0;
@@ -240,11 +240,11 @@ export class InventorySystem extends System {
   }
 
   /** Подобрать все предметы лута в радиусе вокруг игрока. */
-  pickupNearby(playerX: number, playerY: number, radius: number = 70): number {
+  pickupNearby(world: World, playerX: number, playerY: number, radius: number = 70): number {
     if (!this.playerEntity) return 0;
 
     let pickedUp = 0;
-    const lootEntities = this.worldRef.query(ItemStack, Transform);
+    const lootEntities = world.query(ItemStack, Transform);
     for (const { entity, components } of lootEntities) {
       const itemStack = components[0] as ItemStackData;
       const transform = components[1] as { x: number; y: number };
@@ -252,9 +252,9 @@ export class InventorySystem extends System {
       const dist = Math.hypot(transform.x - playerX, transform.y - playerY);
       if (dist > radius) continue;
 
-      const added = this.addItem(itemStack.itemId, itemStack.count, itemStack.quality);
+      const added = this.addItem(world, itemStack.itemId, itemStack.count, itemStack.quality);
       if (added > 0) {
-        this.worldRef.destroyEntity(entity);
+        world.destroyEntity(entity);
         pickedUp++;
         this.eventBus.emit('inventory:item-picked-up', {
           entity: this.playerEntity, itemId: itemStack.itemId, count: itemStack.count, x: transform.x, y: transform.y,
