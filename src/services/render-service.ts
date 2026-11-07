@@ -160,17 +160,22 @@ export class RenderService {
     const texture = await this.loadTexture(url);
     const app = this.app;
     if (app) {
-      // Ждём, пока текстура декодируется, чтобы избежать чтения width/height до загрузки
-      if (!texture.baseTexture || !texture.baseTexture.source) {
-        await new Promise((resolve) => {
-          texture.once('update', resolve);
-          setTimeout(resolve, 2000);
+      // Ждём декодирования текстуры перед чтением width/height (PixiJS v8)
+      if ((texture.width ?? 0) === 0 || (texture.height ?? 0) === 0) {
+        await new Promise<void>((resolve) => {
+          const handler = () => resolve();
+          if ((texture.width ?? 0) > 0 && (texture.height ?? 0) > 0) {
+            handler();
+            return;
+          }
+          texture.on('update', handler);
+          setTimeout(handler, 2000);
         });
       }
       const bg: any = new PIXI.Sprite(texture);
       const renderer: any = app.renderer;
-      const tw = texture.width > 0 ? texture.width : renderer.width;
-      const th = texture.height > 0 ? texture.height : renderer.height;
+      const tw = (texture.width ?? renderer.width) > 0 ? texture.width : renderer.width;
+      const th = (texture.height ?? renderer.height) > 0 ? texture.height : renderer.height;
       bg.scale.set(renderer.width / tw, renderer.height / th);
       this.stage?.addChildAt(bg, 0);
       this.displayObjects.set(-1, bg);
