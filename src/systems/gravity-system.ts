@@ -27,10 +27,14 @@ export class GravitySystem extends System {
   private global: { vector: Vec2; scale: number; active: boolean } | null = null;
 
   constructor(
+    private world: World,
     private physics: { applyForce: (body: unknown, force: Vec2) => void },
     private eventBus: EventBus,
   ) {
     super();
+    this.worldRef = world;
+    // Гарантируем существование глобальной сущности гравитации ещё до вызова setGlobalGravity
+    this.ensureGlobalEntity();
   }
 
   setGlobalGravity(vector: Vec2, scale = 1, active = true): void {
@@ -269,5 +273,4 @@ export class GravitySystem extends System {
     return { ...data, contains, falloffAt };
   }
 
-  private world!: World;
 }

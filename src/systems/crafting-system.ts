@@ -93,11 +93,11 @@ export class CraftingSystem extends System {
     this.uiContainer.addChild(bg);
 
     // Заголовок
-    const title = new PIXI.Text('КРАФТ (C)', {
+    const title = new PIXI.Text({ text: 'КРАФТ (C)', style: {
       fontFamily: 'monospace',
       fontSize: 20,
       fill: 0x4cc9f0,
-    });
+    } });
     title.x = 10;
     title.y = 10;
     this.uiContainer.addChild(title);
@@ -116,11 +116,11 @@ export class CraftingSystem extends System {
     });
     this.uiContainer.addChild(closeBtn);
 
-    const closeLabel = new PIXI.Text('×', {
+    const closeLabel = new PIXI.Text({ text: '×', style: {
       fontFamily: 'monospace',
       fontSize: 18,
       fill: 0x1a1a2e,
-    });
+    } });
     closeLabel.x = 352;
     closeLabel.y = 10;
     this.uiContainer.addChild(closeLabel);
@@ -156,21 +156,21 @@ export class CraftingSystem extends System {
       this.uiContainer.addChild(icon);
 
       // Название рецепта
-      const titleText = new PIXI.Text(recipe.name, {
+      const titleText = new PIXI.Text({ text: recipe.name, style: {
         fontFamily: 'monospace',
         fontSize: 14,
         fill: 0xe8e8f0,
-      });
+      } });
       titleText.x = 76;
       titleText.y = y + 14;
       this.uiContainer.addChild(titleText);
 
       // Требования ресурсов
-      const reqText = new PIXI.Text('', {
+      const reqText = new PIXI.Text({ text: '', style: {
         fontFamily: 'monospace',
         fontSize: 11,
         fill: 0x8a8aa0,
-      });
+      } });
       reqText.x = 76;
       reqText.y = y + 34;
       this.uiContainer.addChild(reqText);
@@ -199,22 +199,22 @@ export class CraftingSystem extends System {
     });
     this.uiContainer.addChild(this.craftBtn);
 
-    this.craftBtnText = new PIXI.Text('Скрафтить', {
+    this.craftBtnText = new PIXI.Text({ text: 'Скрафтить', style: {
       fontFamily: 'monospace',
       fontSize: 16,
       fill: 0x1a1a2e,
       fontWeight: 'bold',
-    });
+    } });
     this.craftBtnText.x = 160 - this.craftBtnText.width / 2;
     this.craftBtnText.y = this.craftBtn.y + 12;
     this.uiContainer.addChild(this.craftBtnText);
 
     // Подсказка Resources
-    const hint = new PIXI.Text('Требуемые ресурсы:', {
+    const hint = new PIXI.Text({ text: 'Требуемые ресурсы:', style: {
       fontFamily: 'monospace',
       fontSize: 10,
       fill: 0x6a6a8a,
-    });
+    } });
     hint.x = 10;
     hint.y = this.craftBtn.y + 58;
     this.uiContainer.addChild(hint);

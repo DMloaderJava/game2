@@ -401,7 +401,7 @@ async function bootstrap(): Promise<void> {
   craftingSystem.setPlayerEntity(player);
   const buildingSystem = new BuildingSystem(render, eventBus);
   buildingSystem.setPhysicsService(physics);
-  const gravitySystem = new GravitySystem(physics, eventBus);
+  const gravitySystem = new GravitySystem(world, physics, eventBus);
   // Инициализируем глобальную гравитацию — иначе игрок будет парить в воздухе
   gravitySystem.setGlobalGravity(new Vec2(0, 9.81 * 60), 1, true);
   const tideSystem = new GravityTideSystem(eventBus, physics, gravitySystem, render);

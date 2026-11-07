@@ -44,11 +44,11 @@ export class InventorySystem extends System {
     this.uiContainer.addChild(bg);
 
     // Заголовок
-    const title = new PIXI.Text('ИНВЕНТАРЬ (I)', {
+    const title = new PIXI.Text({ text: 'ИНВЕНТАРЬ (I)', style: {
       fontFamily: 'monospace',
       fontSize: 20,
       fill: 0x4cc9f0,
-    });
+    } });
     title.x = 10;
     title.y = 10;
     this.uiContainer.addChild(title);
@@ -73,11 +73,11 @@ export class InventorySystem extends System {
       slotBg.y = y;
       this.uiContainer.addChild(slotBg);
 
-      const countText = new PIXI.Text('', {
+      const countText = new PIXI.Text({ text: '', style: {
         fontFamily: 'monospace',
         fontSize: 14,
         fill: 0xffffff,
-      });
+      } });
       countText.x = x + slotSize - 20;
       countText.y = y + slotSize - 20;
       this.uiContainer.addChild(countText);
