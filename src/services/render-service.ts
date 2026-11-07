@@ -210,11 +210,20 @@ export class RenderService {
 }
 
 /** Преобразует относительный путь к текстуре в полный URL dev server,
- *  если игра запущена в среде Arena-preview. */
+ *  если игра запущена в среде Arena-preview (через arena.site/arena.ai прокси).
+ *  В этом случае браузер запрашивает статику с arena.site, где текстур нет,
+ *  поэтому нужно явно указывать URL dev server (e2b.app). */
 function resolveTextureUrl(url: string): string {
-  const sandboxId = (import.meta as any).env?.VITE_E2B_SANDBOX_ID;
-  const port = (import.meta as any).env?.VITE_DEV_PORT ?? '5173';
-  if (sandboxId && url.startsWith('/')) {
+  // Sandbox ID текущего арены-песочницы (известен фиксированно для этой сессии)
+  const sandboxId = 'iusof3fx956iwhe0c1x3i';
+  const port = '5173';
+  // Если уже на e2b.app или localhost — относительный путь сработает сам
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  if (host.includes('e2b.app') || host.includes('localhost') || host === '127.0.0.1') {
+    return url;
+  }
+  // Иначе —Arena-preview: текстуры загружаем напрямую с dev server
+  if (url.startsWith('/')) {
     return `https://${port}-${sandboxId}.e2b.app${url}`;
   }
   return url;
