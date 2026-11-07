@@ -122,6 +122,8 @@ const input = new InputService();
 const eventBus = new EventBus();
 
 async function bootstrap(): Promise<void> {
+  console.log('GRAVITY: VOID — NEW BUILD LOADED (textures: canvas-based, systems: fixed)');
+
   // Инициализируем физику
   physics.init({
     width: window.innerWidth,
@@ -411,8 +413,6 @@ async function bootstrap(): Promise<void> {
   world.addSystem(new CharacterSystem(eventBus));              // 12
   world.addSystem(staminaEnergySystem);                        // 18
   world.addSystem(gravitySystem);
-  world.addSystem(miningSystem);                               // 28 (добыча перед физикой)
-  world.addSystem(gravitySystem);                              // 25
   world.addSystem(miningSystem);                               // 28 (добыча перед физикой)
   world.addSystem(new PhysicsSystem(physics, eventBus));       // 30
   world.addSystem(playerAnimationSystem);                      // 35 (анимация игрока)
