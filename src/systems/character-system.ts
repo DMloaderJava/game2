@@ -11,7 +11,9 @@ import { Material } from '../components/material';
 import { IntentMove } from '../components/intent';
 
 /**
- * CharacterSystem — стейт-машина персонажа (Grounded, Airborne, Climbing, Carrying, ZeroG, Pushing, Dead).
+ * CharacterSystem — стейт-машина персонажа (Grounded, Airborne, ZeroG, Dead).
+ * Читает CharacterController.inputDirection (пишет InputSystem) и groundEntity
+ * (пишет PhysicsSystem после шага физики). Управляет состоянием и пишет IntentMove.
  * Приоритет 12 — сразу после InputSystem (10).
  */
 export class CharacterSystem extends System {
@@ -38,20 +40,20 @@ export class CharacterSystem extends System {
       const prev = ctrl.state;
       ctrl.previousState = prev;
 
-      this.determineState(entity, ctrl, stats, dt);
+      this.determineState(entity, ctrl, stats);
+      this.computeMovement(entity, ctrl, stats, dt);
+
+      // Сбрасываем фреймовые флаги в конце кадра
+      ctrl.jumpPressed = false;
+      ctrl.interactPressed = false;
+      ctrl.digPressed = false;
+      ctrl.scanPressed = false;
 
       if (ctrl.state !== prev) {
         this.eventBus.emit('character:state-changed', {
           entity, from: prev, to: ctrl.state, dt,
         });
       }
-
-      this.computeMovement(entity, ctrl, stats, dt);
-
-      ctrl.jumpPressed = false;
-      ctrl.interactPressed = false;
-      ctrl.digPressed = false;
-      ctrl.scanPressed = false;
     }
   }
 
@@ -59,7 +61,6 @@ export class CharacterSystem extends System {
     entity: number,
     ctrl: CharacterControllerData,
     stats: CharacterStatsData,
-    dt: number,
   ): void {
     const indiv = this.worldRef.getComponent(entity, IndividualGravity as unknown as symbol) as {
       scale: number;
@@ -78,11 +79,6 @@ export class CharacterSystem extends System {
       return;
     }
 
-    if (ctrl.carriedEntity !== null) {
-      ctrl.state = this.isPushableMass(ctrl, stats) ? 'Pushing' : 'Carrying';
-      return;
-    }
-
     const onGround = ctrl.groundEntity !== null && ctrl.groundNormal !== null;
     if (onGround) {
       ctrl.state = 'Grounded';
@@ -91,10 +87,6 @@ export class CharacterSystem extends System {
     }
 
     ctrl.state = 'Airborne';
-  }
-
-  private isPushableMass(ctrl: CharacterControllerData, stats: CharacterStatsData): boolean {
-    return ctrl.carriedEntity !== null;
   }
 
   private computeMovement(
@@ -108,45 +100,43 @@ export class CharacterSystem extends System {
 
     switch (ctrl.state) {
       case 'Grounded':
-        this.handleGrounded(entity, ctrl, dir, speed);
+        this.handleGrounded(entity, ctrl, dir, speed, stats.exhausted);
         break;
       case 'Airborne':
-        this.handleAirborne(entity, ctrl, dir, speed);
-        break;
-      case 'Climbing':
-        this.handleClimbing(entity, ctrl, dir, speed);
-        break;
-      case 'Carrying':
-        this.handleCarrying(entity, ctrl, dir, speed * 0.7);
+        this.handleAirborne(entity, ctrl, dir, speed, stats.exhausted);
         break;
       case 'ZeroG':
         this.handleZeroG(entity, ctrl, dir, speed);
-        break;
-      case 'Pushing':
-        this.handlePushing(entity, ctrl, dir, speed * 0.5);
         break;
       case 'Dead':
         break;
     }
   }
 
-  private handleGrounded(entity: number, ctrl: CharacterControllerData, dir: Vec2, speed: number): void {
-    if (ctrl.jumpPressed && !statsExhausted(entity)) {
+  private handleGrounded(
+    entity: number,
+    ctrl: CharacterControllerData,
+    dir: Vec2,
+    speed: number,
+    exhausted: boolean,
+  ): void {
+    if (ctrl.jumpPressed && !exhausted) {
       this.performJump(entity, ctrl);
       ctrl.state = 'Airborne';
-      return;
-    }
-
-    if (ctrl.interactPressed && ctrl.groundNormal && !this.isFloorNormal(ctrl.groundNormal)) {
-      ctrl.state = 'Climbing';
       return;
     }
 
     this.setIntentMove(entity, dir.mul(speed));
   }
 
-  private handleAirborne(entity: number, ctrl: CharacterControllerData, dir: Vec2, speed: number): void {
-    if (ctrl.jumpPressed && ctrl.canDoubleJump && !ctrl.hasDoubleJumped && !statsExhausted(entity)) {
+  private handleAirborne(
+    entity: number,
+    ctrl: CharacterControllerData,
+    dir: Vec2,
+    speed: number,
+    exhausted: boolean,
+  ): void {
+    if (ctrl.jumpPressed && ctrl.canDoubleJump && !ctrl.hasDoubleJumped && !exhausted) {
       this.performJump(entity, ctrl);
       ctrl.hasDoubleJumped = true;
       return;
@@ -154,19 +144,12 @@ export class CharacterSystem extends System {
     this.setIntentMove(entity, dir.mul(speed * 0.4));
   }
 
-  private handleClimbing(entity: number, ctrl: CharacterControllerData, dir: Vec2, speed: number): void {
-    this.setIntentMove(entity, dir.mul(speed * 0.6));
-  }
-
-  private handleCarrying(entity: number, ctrl: CharacterControllerData, dir: Vec2, speed: number): void {
-    this.setIntentMove(entity, dir.mul(speed));
-  }
-
-  private handleZeroG(entity: number, ctrl: CharacterControllerData, dir: Vec2, speed: number): void {
-    this.setIntentMove(entity, dir.mul(speed));
-  }
-
-  private handlePushing(entity: number, ctrl: CharacterControllerData, dir: Vec2, speed: number): void {
+  private handleZeroG(
+    entity: number,
+    ctrl: CharacterControllerData,
+    dir: Vec2,
+    speed: number,
+  ): void {
     this.setIntentMove(entity, dir.mul(speed));
   }
 
@@ -201,14 +184,4 @@ export class CharacterSystem extends System {
       this.worldRef.addComponent(entity, IntentMove as unknown as symbol, { dx: velocity.x, dy: velocity.y });
     }
   }
-
-  private isFloorNormal(normal: Vec2): boolean {
-    const up = new Vec2(0, -1);
-    return Math.abs(normal.dot(up)) > 0.7;
-  }
-}
-
-function statsExhausted(entity: number): boolean {
-  // В реальности нужно получить из мира, но здесь упрощённо — false
-  return false;
 }

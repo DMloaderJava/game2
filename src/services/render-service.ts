@@ -1031,8 +1031,6 @@ export class RenderService {
     // Камера держит игрока ровно в центре экрана
     this.camera.x = screen.width / 2 - targetX;
     this.camera.y = screen.height / 2 - targetY;
-    // Ограничиваем камеру по вертикали, чтобы земля не уходила в черноту
-    this.camera.y = Math.min(Math.max(this.camera.y, -400), 900);
   }
 
   /** Получить текущую позицию камеры. */

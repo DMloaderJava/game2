@@ -35,7 +35,7 @@ import { InputSystem } from './systems/input-system';
 import { CharacterSystem } from './systems/character-system';
 import { StaminaEnergySystem } from './systems/stamina-energy-system';
 import { PhysicsSystem } from './systems/physics-system';
-import { GravitySystem } from './systems/gravity-system';
+import { GravitySystem, NORMAL_GRAVITY } from './systems/gravity-system';
 import { RenderSystem } from './systems/render-system';
 import { InventorySystem } from './systems/inventory-system';
 import { MiningSystem } from './systems/mining-system';
@@ -185,9 +185,10 @@ async function bootstrap(): Promise<void> {
 
   const playerBody = physics.createCircleBody(player, spawnX, spawnY, PLAYER_RADIUS, {
     restitution: 0.1, friction: 0.5, density: 1, label: 'player',
-    inertia: Infinity,
   });
-  Matter.Body.setAngle(playerBody, 0);
+  // Масса тела должна совпадать с игровой (Material.mass = 80), иначе гравитация
+  // и импульсы прыжка будут некорректно масштабироваться.
+  physics.setBodyMass(playerBody, 80);
 
   world.addComponent(player, PhysicsBody as unknown as symbol, {
     body: playerBody,
@@ -229,7 +230,7 @@ async function bootstrap(): Promise<void> {
     scale: 1, useOverride: false, override: undefined, orientation: 0,
   });
   world.addComponent(player, GravityForce as unknown as symbol, {
-    vector: new Vec2(0, 9.81 * 60), dirty: true,
+    vector: NORMAL_GRAVITY.clone(), dirty: true,
   });
   world.addComponent(player, Inventory as unknown as symbol, {
     slots: Array(20).fill(null), maxSlots: 20, maxWeight: 200,
@@ -381,7 +382,6 @@ async function bootstrap(): Promise<void> {
     world.addComponent(entity, PhysicsBody as unknown as symbol, {
       body: physics.createRectangleBody(entity, bx, by, 48, 48, {
         restitution: 0.3, friction: 0.6, density: 2, label: `start-block-${i}`,
-        inertia: Infinity,
       }),
       gravityScale: 1.0, isSleeping: false,
     });
@@ -420,10 +420,10 @@ async function bootstrap(): Promise<void> {
   craftingSystem.setPlayerEntity(player);
   const buildingSystem = new BuildingSystem(render, eventBus);
   buildingSystem.setPhysicsService(physics);
-  const gravitySystem = new GravitySystem(world, physics, eventBus);
-  gravitySystem.setGlobalGravity(new Vec2(0, 9.81 * 60), 1, true);
+  const gravitySystem = new GravitySystem(world, eventBus);
+  gravitySystem.setGlobalGravity(NORMAL_GRAVITY.clone(), 1, true);
   const tideSystem = new GravityTideSystem(eventBus, physics, gravitySystem, render);
-  tideSystem.setNextGravityVector(0, -9.81 * 60); // инверсия гравитации вверх
+  tideSystem.setNextGravityVector(0, -1); // инверсия гравитации вверх
   const questSystem = new QuestSystem(eventBus);
   questSystem.setPlayerEntity(player);
 
@@ -453,27 +453,30 @@ async function bootstrap(): Promise<void> {
       const playerBodyLoop = physics.getBody(player);
       if (!playerBodyLoop) return;
 
-      // Жёсткая синхронизация камеры с игроком
+      // Жёсткая синхронизация камеры с игроком — центр экрана
       render.follow(playerBodyLoop.position.x, playerBodyLoop.position.y, 0.12);
-      Matter.Body.setAngle(playerBodyLoop, 0);
-      Matter.Body.setAngularVelocity(playerBodyLoop, 0);
 
       const camPos = render.getCameraPosition();
       buildingSystem.setCameraPosition(camPos.x, camPos.y);
 
-      // Killzone: респавн при вылете за границы
+      // Killzone: респавн при вылете за границы (с кулдауном, чтобы не спамить)
       const playerTransform = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number; rotation?: number } | undefined;
+      const now = Date.now();
+      const respawnCooldown = world.getComponent(player, 'respawnCooldown' as unknown as symbol) as { last: number } | undefined;
       if (playerTransform && (playerTransform.y > 2000 || playerTransform.y < -1500)) {
-        const respawnX = 500;
-        const respawnY = GROUND_SURFACE_Y - 28;
-        playerTransform.x = respawnX;
-        playerTransform.y = respawnY;
-        playerTransform.rotation = 0;
-        Matter.Body.setPosition(playerBodyLoop, { x: respawnX, y: respawnY });
-        Matter.Body.setVelocity(playerBodyLoop, { x: 0, y: 0 });
-        Matter.Body.setAngularVelocity(playerBodyLoop, 0);
-        showError('Респавн: выход за границы карты');
-        setTimeout(() => showError(''), 3000);
+        if (!respawnCooldown || now - respawnCooldown.last > 3000) {
+          const respawnX = 500;
+          const respawnY = GROUND_SURFACE_Y - 28;
+          playerTransform.x = respawnX;
+          playerTransform.y = respawnY;
+          playerTransform.rotation = 0;
+          Matter.Body.setPosition(playerBodyLoop, { x: respawnX, y: respawnY });
+          Matter.Body.setVelocity(playerBodyLoop, { x: 0, y: 0 });
+          Matter.Body.setAngularVelocity(playerBodyLoop, 0);
+          world.addComponent(player, 'respawnCooldown' as unknown as symbol, { last: now });
+          showError('Респавн: выход за границы карты');
+          setTimeout(() => showError(''), 3000);
+        }
       }
 
       renderSystem.draw(world, alpha);

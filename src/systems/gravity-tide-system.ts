@@ -15,7 +15,7 @@ import {
 } from '../components/event-state';
 import { Structure, StructuralIntegrity } from '../components/construction';
 import { GravityAnchor } from '../components/construction';
-import { GravitySystem } from './gravity-system';
+import { GravitySystem, NORMAL_GRAVITY } from './gravity-system';
 
 /**
  * GravityTideSystem — глобальный менеджер состояний события «Гравитационный прилив».
@@ -43,8 +43,6 @@ export class GravityTideSystem extends System {
   private tideEntity: number | null = null;
   private tide: TideStateData | null = null;
   private _lastSpawnTime = 0;
-  private _cameraShakeTime = 0;
-  private _warningTintTime = 0;
 
   constructor(
     private eventBus: EventBus,
@@ -107,7 +105,7 @@ export class GravityTideSystem extends System {
       phaseTimer: 0,
       phaseDuration: this.randomRange(TideConfig.stabilityDuration.min, TideConfig.stabilityDuration.max),
       cycleCount: 0,
-      globalGravityVector: new Vec2(0, 9.81),
+      globalGravityVector: NORMAL_GRAVITY.clone(),
       nextGravityVector: this.randomGravityVector(),
       isSaveLocked: false,
       warningSignal: false,
@@ -144,14 +142,14 @@ export class GravityTideSystem extends System {
         this.tide.isSaveLocked = false;
         this.tide.cycleCount += 1;
         // Восстанавливаем нормальную гравитацию после катастрофы
-        this.gravitySystem.setGlobalGravity(new Vec2(0, 9.81 * 60), 1, true);
+        this.gravitySystem.setGlobalGravity(NORMAL_GRAVITY.clone(), 1, true);
         this.eventBus.emit('tide:catastrophe-end', { cycleCount: this.tide.cycleCount });
         break;
 
       case 'aftermath':
         this.tide.phase = 'stability';
         this.tide.phaseDuration = this.randomRange(TideConfig.stabilityDuration.min, TideConfig.stabilityDuration.max);
-        this.tide.globalGravityVector = new Vec2(0, 9.81 * 60);
+        this.tide.globalGravityVector = NORMAL_GRAVITY.clone();
         this.tide.nextGravityVector = this.randomGravityVector();
         this.eventBus.emit('tide:phase-changed', {
           from: oldPhase,
@@ -200,18 +198,6 @@ export class GravityTideSystem extends System {
     if (!this.tide) return;
 
     // Красный оттенок убран — цвета текстур не искажаются
-
-    // Тряска камеры
-    this._cameraShakeTime += dt;
-    if (this._cameraShakeTime > 0.1) {
-      this._cameraShakeTime = 0;
-      const shakeX = (Math.random() - 0.5) * 8;
-      const shakeY = (Math.random() - 0.5) * 8;
-      if (this.render.camera) {
-        this.render.camera.x += shakeX;
-        this.render.camera.y += shakeY;
-      }
-    }
 
     // Проверка целостности построек — защита через якоря и купола
     this.checkStructureIntegrity(world, dt);
@@ -396,7 +382,7 @@ export class GravityTideSystem extends System {
 
   /** Получить текущий вектор глобальной гравитации. */
   getGlobalGravityVector(): Vec2 {
-    return this.tide?.globalGravityVector.clone() ?? new Vec2(0, 9.81);
+    return this.tide?.globalGravityVector.clone() ?? NORMAL_GRAVITY.clone();
   }
 
   /** Получить текущую фазу прилива. */
@@ -432,11 +418,11 @@ export class GravityTideSystem extends System {
 
   private randomGravityVector(): Vec2 {
     const directions = [
-      new Vec2(0, 9.81),
-      new Vec2(0, -9.81),
-      new Vec2(9.81, 0),
-      new Vec2(-9.81, 0),
-      new Vec2(6.94, 6.94),
+      NORMAL_GRAVITY.clone(),
+      NORMAL_GRAVITY.clone().mul(-1),
+      new Vec2(1, 0),
+      new Vec2(-1, 0),
+      new Vec2(0.707, 0.707),
     ];
     return directions[Math.floor(Math.random() * directions.length)].clone();
   }

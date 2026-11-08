@@ -10,6 +10,7 @@ export class PhysicsService {
   world: any = null;
 
   private bodies = new Map<number, any>();
+  private bodyToEntity = new Map<any, number>();
 
   init(options: {
     width: number;
@@ -49,17 +50,6 @@ export class PhysicsService {
   step(delta: number): void {
     if (this.engine) {
       Matter.Engine.update(this.engine, delta * 1000, 1);
-
-      // ЖЕСТКОЕ ОГРАНИЧЕНИЕ вертикальной скорости — защита от туннелирования сквозь пол
-      const maxFallSpeed = 10;
-      const maxRiseSpeed = 8;
-      for (const body of this.world.bodies) {
-        if (body.velocity.y > maxFallSpeed) {
-          Matter.Body.setVelocity(body, { x: body.velocity.x, y: maxFallSpeed });
-        } else if (body.velocity.y < -maxRiseSpeed) {
-          Matter.Body.setVelocity(body, { x: body.velocity.x, y: -maxRiseSpeed });
-        }
-      }
     }
   }
 
@@ -78,6 +68,7 @@ export class PhysicsService {
     });
     Matter.World.add(this.world, body);
     this.bodies.set(entity, body);
+    this.bodyToEntity.set(body, entity);
     return body;
   }
 
@@ -95,6 +86,7 @@ export class PhysicsService {
     });
     Matter.World.add(this.world, body);
     this.bodies.set(entity, body);
+    this.bodyToEntity.set(body, entity);
     return body;
   }
 
@@ -119,6 +111,15 @@ export class PhysicsService {
       this.engine.gravity.x = x;
       this.engine.gravity.y = y;
     }
+  }
+
+  setBodyMass(body: any, mass: number): void {
+    if (!body) return;
+    Matter.Body.setMass(body, mass);
+  }
+
+  getEntityFromBody(body: any): number | undefined {
+    return this.bodyToEntity.get(body);
   }
 
   queryPoint(x: number, y: number): any[] {

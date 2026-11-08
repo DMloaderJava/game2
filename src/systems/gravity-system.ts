@@ -16,10 +16,14 @@ import { GravityAnchor } from '../components/construction';
 /**
  * GravitySystem — контроллер гравитации.
  * Вычисляет эффективную гравитацию для каждой сущности и записывает в GravityForce.
- * Гравитационный якорь применяет противоположную силу через Matter.Body.applyForce,
- * чтобы удерживать объекты в куполе во время инверсии гравитации.
+ * Гравитационный якорь не возвращает магическое число — физическая компенсация
+ * реализуется в PhysicsSystem через Matter.Body.applyForce.
  * Приоритет 25 — перед PhysicsSystem (30).
+ *
+ * Нормальная гравитация: NORMAL_GRAVITY = {0, 1} (в игровых единицах Matter.js).
  */
+export const NORMAL_GRAVITY = new Vec2(0, 1);
+
 export class GravitySystem extends System {
   readonly priority = 25;
   readonly required = [Transform];
@@ -28,22 +32,14 @@ export class GravitySystem extends System {
   private zones = new Map<string, any>();
   private globalEntity = -1;
   private global: { vector: Vec2; scale: number; active: boolean } | null = null;
-  private physicsService: { applyForce: (body: unknown, force: Vec2) => void } | null = null;
 
   constructor(
     private world: World,
-    physicsService: { applyForce: (body: unknown, force: Vec2) => void },
     private eventBus: EventBus,
   ) {
     super();
     this.worldRef = world;
-    this.physicsService = physicsService;
-    // Гарантируем существование глобальной сущности гравитации ещё до вызова setGlobalGravity
     this.ensureGlobalEntity();
-  }
-
-  setPhysicsService(physics: { applyForce: (body: unknown, force: Vec2) => void }): void {
-    this.physicsService = physics;
   }
 
   setGlobalGravity(vector: Vec2, scale = 1, active = true): void {
@@ -156,9 +152,6 @@ export class GravitySystem extends System {
         world.addComponent(entity, GravityForce as unknown as symbol, { vector: force, dirty: true });
       }
     }
-
-    // Применяем физическую силу якоря к сущностям в его радиусе во время инверсии гравитации
-    this.applyAnchorForces(dt);
   }
 
   /** Вычисляет эффективную гравитацию для сущности (без хардкода якоря). */
@@ -189,79 +182,33 @@ export class GravitySystem extends System {
     return base.mul(indiv?.scale ?? 1);
   }
 
-  /** Применяет противоположную силу якоря к сущностям в его радиусе. */
-  private applyAnchorForces(dt: number): void {
-    if (!this.physicsService) return;
-
-    const anchors = this.worldRef.query(GravityAnchor, Transform);
-    const globalVec = this.getGlobalGravity();
-    const isInverted = globalVec ? globalVec.y < 0 : false;
-
-    for (const { entity, components } of anchors) {
+  /** Проверяет, находится ли точка внутри активного якоря. */
+  isInsideAnchor(pos: Vec2): { inside: boolean; anchorX: number; anchorY: number; radius: number } | null {
+    const anchors = this.worldRef.query(GravityAnchor as unknown as symbol, Transform as unknown as symbol);
+    for (const { components } of anchors) {
       const anchorData = components[0] as { active: boolean; radius: number };
       const anchorTransform = components[1] as { x: number; y: number };
-      if (!anchorData.active || !anchorTransform) continue;
-
-      const anchorPos = new Vec2(anchorTransform.x, anchorTransform.y);
-      const radius = anchorData.radius;
-
-      // Находим все динамические тела в радиусе якоря
-      const bodies = this.worldRef.query(PhysicsBody, Transform, Material);
-      for (const { entity: bodyEntity, components: bodyComponents } of bodies) {
-        const bodyData = bodyComponents[0] as { body: { isStatic: boolean } };
-        const bodyTransform = bodyComponents[1] as { x: number; y: number };
-        const material = bodyComponents[2] as { mass: number };
-
-        if (!bodyData.body || bodyData.body.isStatic) continue;
-        if (bodyEntity === entity) continue; // не применяем к самому якорю
-
-        const dx = bodyTransform.x - anchorPos.x;
-        const dy = bodyTransform.y - anchorPos.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > radius || dist === 0) continue;
-
-        // Во время инверсии гравитации — прикладываем силу вниз, чтобы удержать в куполе
-        if (isInverted) {
-          const forceStrength = material.mass * 9.81 * 60 * 1.5; // компенсация инвертированной гравитации
-          const force = new Vec2(0, forceStrength);
-          this.physicsService.applyForce(bodyData.body, force);
+      if (anchorData.active && anchorTransform) {
+        const dx = pos.x - anchorTransform.x;
+        const dy = pos.y - anchorTransform.y;
+        if (Math.hypot(dx, dy) <= anchorData.radius) {
+          return { inside: true, anchorX: anchorTransform.x, anchorY: anchorTransform.y, radius: anchorData.radius };
         }
       }
     }
-  }
-
-  applyForcesToBodies(dt: number): void {
-    const bodies = this.worldRef.query(PhysicsBody, GravityForce, Material);
-    for (const { entity, components } of bodies) {
-      const bodyData = components[0] as { body: unknown };
-      const forceData = components[1] as { vector: Vec2; dirty: boolean };
-      const material = components[2] as { mass: number };
-
-      if (!forceData.dirty || !bodyData.body) continue;
-
-      const rawForce = forceData.vector.mul(material.mass);
-      const clampedForce = new Vec2(
-        Math.max(-500, Math.min(500, rawForce.x)),
-        Math.max(-500, Math.min(500, rawForce.y)),
-      );
-      if (!this.physicsService) continue;
-      this.physicsService.applyForce(bodyData.body, clampedForce);
-
-      forceData.dirty = false;
-      this.worldRef.addComponent(entity, GravityForce as unknown as symbol, forceData);
-    }
+    return null;
   }
 
   private ensureGlobalEntity(): number {
     if (this.globalEntity !== -1) return this.globalEntity;
     const entity = this.worldRef.createEntity();
     this.worldRef.addComponent(entity, GlobalGravity as unknown as symbol, {
-      vector: new Vec2(0, 9.81 * 60),
+      vector: NORMAL_GRAVITY.clone(),
       scale: 1,
       active: true,
     });
     this.globalEntity = entity;
-    this.global = { vector: new Vec2(0, 9.81 * 60), scale: 1, active: true };
+    this.global = { vector: NORMAL_GRAVITY.clone(), scale: 1, active: true };
     return entity;
   }
 
@@ -331,5 +278,4 @@ export class GravitySystem extends System {
 
     return { ...data, contains, falloffAt };
   }
-
 }
