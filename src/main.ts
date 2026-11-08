@@ -186,12 +186,7 @@ async function bootstrap(): Promise<void> {
     texture: TEX.playerIdle0, tint: 0xffffff, alpha: 1, visible: true, layer: 10,
   });
   // Анимированный спрайт персонажа (Idle кадры)
-  const playerSprite = render.addSprite(player, TEX.playerIdle0, 10, true, 4, 0.15);
-  if (playerSprite) {
-    playerSprite.anchor.set(0.5, 0.5);
-    playerSprite.width = PLAYER_RADIUS * 2;
-    playerSprite.height = PLAYER_RADIUS * 2;
-  }
+  const playerSprite = render.addSprite(player, TEX.playerIdle0, 10, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2, true, 4, 0.15);
   world.addComponent(player, Player as unknown as symbol, {
     health: 100, maxHealth: 100, speed: PLAYER_SPEED, jumpForce: PLAYER_JUMP, canDoubleJump: false,
   });
@@ -256,11 +251,7 @@ async function bootstrap(): Promise<void> {
   world.addComponent(leftWall, Renderable as unknown as symbol, {
     texture: TEX.blockStoneWall, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
   });
-  const leftWallSprite = render.addSprite(leftWall, TEX.blockStoneWall, 5);
-  if (leftWallSprite) {
-    leftWallSprite.width = WALL_THICKNESS;
-    leftWallSprite.height = GROUND_HEIGHT + 400;
-  }
+  const leftWallSprite = render.addTilingSprite(leftWall, TEX.blockStoneWall, 5, WALL_THICKNESS, GROUND_HEIGHT + 400);
   world.addComponent(leftWall, Material as unknown as symbol, {
     mass: 0, density: 5000, strength: 50000, durability: 1,
     sailArea: 0, airResistance: 1, state: 'solid',
@@ -282,11 +273,7 @@ async function bootstrap(): Promise<void> {
   world.addComponent(rightWall, Renderable as unknown as symbol, {
     texture: TEX.blockStoneWall, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
   });
-  const rightWallSprite = render.addSprite(rightWall, TEX.blockStoneWall, 5);
-  if (rightWallSprite) {
-    rightWallSprite.width = WALL_THICKNESS;
-    rightWallSprite.height = GROUND_HEIGHT + 400;
-  }
+  const rightWallSprite = render.addTilingSprite(rightWall, TEX.blockStoneWall, 5, WALL_THICKNESS, GROUND_HEIGHT + 400);
   world.addComponent(rightWall, Material as unknown as symbol, {
     mass: 0, density: 5000, strength: 50000, durability: 1,
     sailArea: 0, airResistance: 1, state: 'solid',
@@ -308,11 +295,7 @@ async function bootstrap(): Promise<void> {
   world.addComponent(groundEntity, Renderable as unknown as symbol, {
     texture: TEX.blockDirt, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
   });
-  const groundSprite = render.addSprite(groundEntity, TEX.blockDirt, 5);
-  if (groundSprite) {
-    groundSprite.width = LEVEL_WIDTH;
-    groundSprite.height = GROUND_HEIGHT;
-  }
+  const groundSprite = render.addTilingSprite(groundEntity, TEX.blockDirt, 5, LEVEL_WIDTH, GROUND_HEIGHT * 4);
   world.addComponent(groundEntity, Material as unknown as symbol, {
     mass: 0, density: 2000, strength: 10000, durability: 1,
     sailArea: 0, airResistance: 1, state: 'solid',
@@ -362,11 +345,7 @@ async function bootstrap(): Promise<void> {
     world.addComponent(entity, Renderable as unknown as symbol, {
       texture: b.tex, tint: 0xffffff, alpha: 1, visible: true, layer: 10,
     });
-    const sprite = render.addSprite(entity, b.tex, 10);
-    if (sprite) {
-      sprite.width = b.w;
-      sprite.height = b.h;
-    }
+    const sprite = render.addSprite(entity, b.tex, 10, b.w, b.h);
     world.addComponent(entity, Material as unknown as symbol, {
       mass: 20, density: 2000, strength: 8000, durability: 1,
       sailArea: 0.05, airResistance: 0.3, state: 'solid',

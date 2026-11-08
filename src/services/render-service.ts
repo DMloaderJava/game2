@@ -1,49 +1,18 @@
-/**
- * RenderService — обёртка над PixiJS v8.
- * Только текстуры и спрайты — никаких Graphics примитивов для игровых объектов.
- */
+/** RenderService — обёртка над PixiJS v8. */
 import * as PIXI from 'pixi.js';
 
 export class RenderService {
   app: PIXI.Application | null = null;
   stage: PIXI.Container | null = null;
   camera: PIXI.Container | null = null;
+  bgLayer: PIXI.Container | null = null; // Звездный фон за камерой
 
   layers = new Map<number, PIXI.Container>();
   private displayObjects = new Map<number, any>();
   private textures = new Map<string, PIXI.Texture>();
   private bgColor = 0x111827;
 
-  async init(options: { width: number; height: number; background?: number }): Promise<void> {
-    this.app = new PIXI.Application();
-    await this.app.init({
-      width: options.width,
-      height: options.height,
-      backgroundColor: options.background ?? this.bgColor,
-      antialias: true,
-      resolution: window.devicePixelRatio || 1,
-      autoDensity: true,
-    });
-
-    this.app.canvas.style.display = 'block';
-    document.body.appendChild(this.app.canvas);
-
-    this.stage = this.app.stage;
-    this.camera = new PIXI.Container();
-    this.stage.addChild(this.camera);
-
-    for (const layer of [0, 10, 20, 30]) {
-      const container = new PIXI.Container();
-      this.camera.addChild(container);
-      this.layers.set(layer, container);
-    }
-
-    window.addEventListener('resize', () => this.resize());
-    this.resize();
-  }
-
-  /* Цветовые плейсхолдеры для текстур (имя файла → RGB) — используется,
-   * когда загрузка по URL не удаётся (Arena-preview iframe, CORS, битые файлы). */
+  /* Цветовые плейсхолдеры для процедурных текстур. */
   private static readonly PLACEHOLDER_COLORS: Record<string, number> = {
     // Блоки мира
     block_dirt: 0x654321,
@@ -78,32 +47,293 @@ export class RenderService {
     player_jump: 0xffdcb1,
     player_idle_style: 0xffdcb1,
     // UI
-    bg_space: 0x05050a,
-    ui_slot: 0x3c3c50,
+    bgSpace: 0x05050a,
+    uiSlot: 0x3c3c50,
   };
 
-  /** Создать текстуру-сплошной цвет из canvas (без загрузки файла). */
-  private createSolidTexture(color: number, size = 64): PIXI.Texture {
+  async init(options: { width: number; height: number; background?: number }): Promise<void> {
+    this.app = new PIXI.Application();
+    await this.app.init({
+      width: options.width,
+      height: options.height,
+      backgroundColor: options.background ?? this.bgColor,
+      antialias: true,
+      resolution: window.devicePixelRatio || 1,
+      autoDensity: true,
+    });
+
+    this.app.canvas.style.display = 'block';
+    document.body.appendChild(this.app.canvas);
+
+    this.stage = this.app.stage;
+    this.camera = new PIXI.Container();
+    this.stage.addChild(this.camera);
+
+    // Фоновый слой за камерой — не уезжает при движении
+    this.bgLayer = new PIXI.Container();
+    this.stage.addChildAt(this.bgLayer, 0);
+    this.drawCosmicBackground();
+
+    for (const layer of [0, 10, 20, 30]) {
+      const container = new PIXI.Container();
+      this.camera.addChild(container);
+      this.layers.set(layer, container);
+    }
+
+    window.addEventListener('resize', () => this.resize());
+    this.resize();
+  }
+
+  /* ── Процедурная отрисовка текстур на canvas ───────────────── */
+
+  private createProceduralTexture(name: string, size = 64): PIXI.Texture {
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
-    ctx.fillRect(0, 0, size, size);
+    ctx.clearRect(0, 0, size, size);
+
+    switch (name) {
+      // ── Игрок: космонавт ──
+      case 'player_idle':
+      case 'player_idle_0':
+      case 'player_idle_1':
+      case 'player_idle_2':
+      case 'player_idle_3':
+      case 'player_walk':
+      case 'player_walk_0':
+      case 'player_walk_1':
+      case 'player_walk_2':
+      case 'player_walk_3':
+      case 'player_walk_4':
+      case 'player_walk_5':
+        this.drawAstronaut(ctx, size, size, 'idle');
+        break;
+
+      case 'player_jump':
+        this.drawAstronaut(ctx, size, size, 'jump');
+        break;
+
+      // ── Блоки мира ──
+      case 'block_dirt':
+        this.drawGround(ctx, size, size);
+        break;
+
+      case 'block_stone':
+        this.drawStone(ctx, size, size);
+        break;
+
+      case 'block_ferrite':
+        this.drawOre(ctx, size, size, 0xff6600);
+        break;
+
+      case 'block_resonit':
+        this.drawOre(ctx, size, size, 0xaa00ff);
+        break;
+
+      case 'block_stone_wall':
+        this.drawStoneWall(ctx, size, size);
+        break;
+
+      // ── Устройства ──
+      case 'gravity_anchor':
+        this.drawGravityAnchor(ctx, size, size);
+        break;
+
+      case 'energy_dome':
+        this.drawEnergyDome(ctx, size, size);
+        break;
+
+      default:
+        this.drawSolid(ctx, size, size, RenderService.PLACEHOLDER_COLORS[name] ?? 0x808080);
+    }
+
     return PIXI.Texture.from(canvas);
   }
 
-  /** Загрузить текстуру по URL (кешируется). В Arena-preview iframe браузер
-   *  разрешает относительные пути к домену arena.site, где текстур нет.
-   *  Поэтому создаём текстуру программно из canvas — работает везде. */
+  /** Одиночный цвет (fallback). */
+  private drawSolid(ctx: CanvasRenderingContext2D, w: number, h: number, color: number): void {
+    ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  /** Космонавт с шлемом, визором и ранцем. */
+  private drawAstronaut(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    pose: 'idle' | 'jump',
+  ): void {
+    const cx = w / 2;
+    const cy = h / 2;
+
+    // Тело (скафандр)
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(cx - 12, cy - 6, 24, 14);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 8, cy + 6, 16, 10);
+
+    // Шлем
+    ctx.fillStyle = '#d0d0d0';
+    ctx.beginPath();
+    ctx.arc(cx, cy - 14, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#808080';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Визор (светящийся голубой)
+    ctx.fillStyle = '#00ffff';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 14, 7, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Рюкзак / джетпак
+    ctx.fillStyle = '#606060';
+    ctx.fillRect(cx + 14, cy - 2, 8, 12);
+
+    // Пламя джетпака при прыжке
+    if (pose === 'jump') {
+      ctx.fillStyle = '#ff4400';
+      ctx.fillRect(cx + 12, cy + 6, 6, 10);
+      ctx.fillStyle = '#ffaa00';
+      ctx.fillRect(cx + 14, cy + 8, 4, 6);
+    }
+
+    // Руки
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 14, cy - 2, 6, 8);
+    ctx.fillRect(cx + 8, cy - 2, 6, 8);
+
+    // Ноги
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(cx - 8, cy + 14, 6, 8);
+    ctx.fillRect(cx + 2, cy + 14, 6, 8);
+  }
+
+  /** Слоистая инопланетная почва. */
+  private drawGround(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    // Верхний слой — фиолетовый мох
+    ctx.fillStyle = '#4a148c';
+    ctx.fillRect(0, 0, w, 14);
+    ctx.fillStyle = '#7b1fa2';
+    ctx.fillRect(0, 14, w, 10);
+    // Каменное тело
+    ctx.fillStyle = '#5d4037';
+    ctx.fillRect(0, 24, w, h - 24);
+    // Трексты / трещины
+    ctx.strokeStyle = '#3e2723';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < w; i += 32) {
+      ctx.beginPath();
+      ctx.moveTo(i, 24);
+      ctx.lineTo(i + 16, h);
+      ctx.stroke();
+    }
+  }
+
+  /** Каменный блок с трещинами. */
+  private drawStone(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    ctx.fillStyle = '#616161';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#424242';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(4, 4);
+    ctx.lineTo(w - 4, 8);
+    ctx.lineTo(w - 8, h - 4);
+    ctx.lineTo(8, h - 8);
+    ctx.closePath();
+    ctx.stroke();
+    // Блик
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(6, 6, 10, 10);
+  }
+
+  /** Руда со светящимися жилами. */
+  private drawOre(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    glowColor: number,
+  ): void {
+    ctx.fillStyle = '#424242';
+    ctx.fillRect(0, 0, w, h);
+
+    const glowHex = `#${glowColor.toString(16).padStart(6, '0')}`;
+    ctx.fillStyle = glowHex;
+    // Жилы руды
+    ctx.beginPath();
+    ctx.arc(w * 0.3, h * 0.3, 6, 0, Math.PI * 2);
+    ctx.arc(w * 0.7, h * 0.7, 8, 0, Math.PI * 2);
+    ctx.arc(w * 0.5, h * 0.2, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Границы камня
+    ctx.strokeStyle = '#212121';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(2, 2, w - 4, h - 4);
+  }
+
+  /** Кирпичная стена. */
+  private drawStoneWall(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    ctx.fillStyle = '#757575';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#424242';
+    ctx.lineWidth = 2;
+    // Кирпичный узор
+    for (let y = 0; y < h; y += 16) {
+      const offset = (y / 16) % 2 === 0 ? 0 : 16;
+      for (let x = -16 + offset; x < w; x += 32) {
+        ctx.strokeRect(x, y, 30, 14);
+      }
+    }
+  }
+
+  /** Гравитационный якорь — техно-блок с ядром. */
+  private drawGravityAnchor(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    ctx.fillStyle = '#37474f';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#4cc9f0';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(4, 4, w - 8, h - 8);
+    // Ядро
+    ctx.fillStyle = '#4cc9f0';
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(76, 201, 240, 0.4)';
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, 16, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /** Энергетический купол — сфера с энергией. */
+  private drawEnergyDome(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    ctx.fillStyle = '#263238';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#00ffff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, h / 2 - 4, 0, Math.PI * 2);
+    ctx.stroke();
+    // Внутренняя энергия
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, h / 2 - 8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /* ── Публичное API ─────────────────────────────────────────── */
+
+  /** Загрузить текстуру по URL (кешируется). PixiJS v8: Texture.from(url) не подгружает
+   *  отсутствующий в кэше ассет и возвращает undefined, поэтому создаём текстуру
+   *  программно из canvas — работает везде, в том числе в Arena-preview iframe. */
   async loadTexture(url: string): Promise<PIXI.Texture> {
     if (this.textures.has(url)) return this.textures.get(url)!;
 
-    // Извлекаем имя текстуры из URL для подбора цвета плейсхолдера
     const fileName = url.split('/').pop()?.replace('.png', '') ?? url;
-    const color = RenderService.PLACEHOLDER_COLORS[fileName] ?? 0x808080;
-
-    const texture = this.createSolidTexture(color);
+    const texture = this.createProceduralTexture(fileName);
     this.textures.set(url, texture);
     return texture;
   }
@@ -124,11 +354,13 @@ export class RenderService {
     this.app.renderer.resize(parent.clientWidth, parent.clientHeight);
   }
 
-  /** Добавить спрайт сущности с текстурой. */
+  /** Добавить спрайт сущности с текстурой и явно заданными размерами. */
   addSprite(
     entity: number,
     textureUrl: string,
     layer = 10,
+    width = 64,
+    height = 64,
     animated = false,
     frameCount = 1,
     frameDuration = 0.1,
@@ -139,23 +371,48 @@ export class RenderService {
     if (!container) return null;
 
     let displayObject: any;
+    const texture = this.textures.get(textureUrl) ?? PIXI.Texture.WHITE;
+
     if (animated && frameCount > 1) {
       const textures: PIXI.Texture[] = [];
       for (let i = 0; i < frameCount; i++) {
         const t = this.textures.get(`${textureUrl.replace('.png', '')}_${i}.png`);
-        textures.push(t ?? this.textures.get(textureUrl)!);
+        textures.push(t ?? texture);
       }
       displayObject = new PIXI.AnimatedSprite(textures);
       displayObject.animationSpeed = frameDuration;
       displayObject.play();
     } else {
-      const texture = this.textures.get(textureUrl) ?? PIXI.Texture.WHITE;
       displayObject = new PIXI.Sprite(texture);
     }
+
+    displayObject.anchor.set(0.5);
+    displayObject.width = width;
+    displayObject.height = height;
 
     container.addChild(displayObject);
     this.displayObjects.set(entity, displayObject);
     return displayObject;
+  }
+
+  /** Добавить спрайт-мост (TilingSprite) для длинной земли — текстура повторяется. */
+  addTilingSprite(
+    entity: number,
+    textureUrl: string,
+    layer = 10,
+    width = 64,
+    height = 64,
+  ): any {
+    if (!this.app) return null;
+    const container = this.layers.get(layer);
+    if (!container) return null;
+
+    const texture = this.textures.get(textureUrl) ?? PIXI.Texture.WHITE;
+    const tiling = new PIXI.TilingSprite({ texture, width, height });
+    tiling.anchor.set(0.5);
+    container.addChild(tiling);
+    this.displayObjects.set(entity, tiling);
+    return tiling;
   }
 
   /** Добавить спрайт из уже загруженной текстуры. */
@@ -164,6 +421,7 @@ export class RenderService {
     const container = this.layers.get(layer);
     if (!container) return null;
     const sprite = new PIXI.Sprite(texture);
+    sprite.anchor.set(0.5);
     container.addChild(sprite);
     this.displayObjects.set(entity, sprite);
     return sprite;
@@ -187,6 +445,29 @@ export class RenderService {
     }
   }
 
+  setSpriteAnimation(entity: number, textureUrls: string[], animationSpeed = 0.1): void {
+    const obj = this.displayObjects.get(entity);
+    if (!obj) return;
+    const textures = textureUrls
+      .map((u) => this.textures.get(u))
+      .filter((t): t is PIXI.Texture => t !== undefined);
+    if (textures.length === 0) return;
+    if (obj instanceof PIXI.AnimatedSprite) {
+      obj.textures = textures;
+      obj.animationSpeed = animationSpeed;
+      if (!obj.playing) obj.play();
+    } else if (obj instanceof PIXI.Sprite) {
+      obj.texture = textures[0];
+    }
+  }
+
+  flipSpriteX(entity: number, flipX: boolean): void {
+    const obj = this.displayObjects.get(entity);
+    if (!obj) return;
+    const scaleX = Math.abs(obj.scale.x);
+    obj.scale.x = flipX ? -scaleX : scaleX;
+  }
+
   follow(targetX: number, targetY: number, lerp = 0.15): void {
     if (!this.camera || !this.app) return;
     const screen = this.app.renderer.screen;
@@ -204,7 +485,6 @@ export class RenderService {
 
   render(): void {
     if (!this.app) return;
-    // PixiJS v8: явно рендерим сцену через рендерер
     (this.app.renderer as any).render(this.app.stage);
   }
 
@@ -221,38 +501,11 @@ export class RenderService {
     const texture = await this.loadTexture(url);
     const app = this.app;
     if (!app || !texture) return;
-    const bg: any = new PIXI.Sprite(texture);
-    const renderer: any = app.renderer;
-    // Заполняем экран фоном, не читая width/height текстуры (PixiJS v8 может вернуть 0 до декодирования)
-    bg.width = renderer.width;
-    bg.height = renderer.height;
+    const bg = new PIXI.Sprite(texture);
+    bg.width = app.renderer.width;
+    bg.height = app.renderer.height;
     this.stage?.addChildAt(bg, 0);
     this.displayObjects.set(-1, bg);
-  }
-
-  /** Переключить анимацию у AnimatedSprite сущности (или текстуру у обычного Sprite). */
-  setSpriteAnimation(entity: number, textureUrls: string[], animationSpeed = 0.1): void {
-    const obj = this.displayObjects.get(entity);
-    if (!obj) return;
-    const textures = textureUrls
-      .map((u) => this.textures.get(u))
-      .filter((t): t is PIXI.Texture => t !== undefined);
-    if (textures.length === 0) return;
-    if (obj instanceof PIXI.AnimatedSprite) {
-      obj.textures = textures;
-      obj.animationSpeed = animationSpeed;
-      if (!obj.playing) obj.play();
-    } else if (obj instanceof PIXI.Sprite) {
-      obj.texture = textures[0];
-    }
-  }
-
-  /** Зеркалировать спрайт по X (отражение влево/вправо). */
-  flipSpriteX(entity: number, flipX: boolean): void {
-    const obj = this.displayObjects.get(entity);
-    if (!obj) return;
-    const scaleX = Math.abs(obj.scale.x);
-    obj.scale.x = flipX ? -scaleX : scaleX;
   }
 
   destroy(): void {
@@ -260,8 +513,58 @@ export class RenderService {
     this.app = null;
     this.stage = null;
     this.camera = null;
+    this.bgLayer = null;
     this.layers.clear();
     this.displayObjects.clear();
     this.textures.clear();
+  }
+
+  /* ── Космический фон ───────────────────────────────────────── */
+
+  private drawCosmicBackground(): void {
+    if (!this.bgLayer || !this.app) return;
+
+    const w = this.app.renderer.width;
+    const h = this.app.renderer.height;
+
+    // Градиентный фон
+    const bg = new PIXI.Graphics();
+    const gradient = bg.beginFill(0x0b1021);
+    bg.drawRect(0, 0, w, h);
+    bg.endFill();
+    this.bgLayer.addChild(bg);
+
+    // Звезды
+    const stars = new PIXI.Graphics();
+    stars.beginFill(0xffffff);
+    const starCount = Math.floor((w * h) / 4000);
+    for (let i = 0; i < starCount; i++) {
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      const size = Math.random() * 1.5 + 0.5;
+      const alpha = Math.random() * 0.7 + 0.3;
+      stars.beginFill(0xffffff, alpha);
+      stars.drawCircle(x, y, size);
+      stars.endFill();
+    }
+    this.bgLayer.addChild(stars);
+
+    // Туманность
+    const nebula = new PIXI.Graphics();
+    nebula.beginFill(0x4400aa, 0.15);
+    nebula.drawCircle(w * 0.3, h * 0.3, w * 0.4);
+    nebula.beginFill(0x0044aa, 0.1);
+    nebula.drawCircle(w * 0.7, h * 0.6, w * 0.3);
+    nebula.endFill();
+    this.bgLayer.addChild(nebula);
+
+    // Луна / планета
+    const planet = new PIXI.Graphics();
+    planet.beginFill(0x888888);
+    planet.drawCircle(w * 0.85, h * 0.15, 40);
+    planet.beginFill(0x666666);
+    planet.drawCircle(w * 0.82, h * 0.12, 12);
+    planet.endFill();
+    this.bgLayer.addChild(planet);
   }
 }
