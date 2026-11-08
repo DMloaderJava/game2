@@ -4,6 +4,7 @@
  * рабочая камера, добыча ресурсов по клавише E, инвентарь.
  */
 import * as PIXI from 'pixi.js';
+import * as Matter from 'matter-js';
 import { World } from './ecs/world';
 import { EventBus } from './core/event-bus';
 import { GameLoop } from './core/game-loop';
@@ -196,16 +197,13 @@ async function bootstrap(): Promise<void> {
   world.addComponent(player, Transform as unknown as symbol, {
     x: 200, y: GROUND_SURFACE_Y - 60, rotation: 0, scaleX: 1, scaleY: 1,
   });
-  world.addComponent(player, PhysicsBody as unknown as symbol, {
-    body: physics.createCircleBody(player, 200, GROUND_SURFACE_Y - 60, PLAYER_RADIUS, {
-      restitution: 0.1, friction: 0.5, density: 1, label: 'player',
-    }),
-    gravityScale: 1.0, isSleeping: false,
+  const playerBody = physics.createCircleBody(player, 200, GROUND_SURFACE_Y - 60, PLAYER_RADIUS, {
+    restitution: 0.1, friction: 0.5, density: 1, label: 'player',
+    inertia: Infinity, // космонавт не кувыркается при столкновениях и смене гравитации
   });
+  Matter.Body.setAngle(playerBody, 0);
   world.addComponent(player, PhysicsBody as unknown as symbol, {
-    body: physics.createCircleBody(player, 200, 400, PLAYER_RADIUS, {
-      restitution: 0.1, friction: 0.5, density: 1, label: 'player',
-    }),
+    body: playerBody,
     gravityScale: 1.0, isSleeping: false,
   });
   world.addComponent(player, Renderable as unknown as symbol, {
@@ -322,6 +320,70 @@ async function bootstrap(): Promise<void> {
     temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.5,
   });
 
+  // ============================================================================
+  // Гравитационный якорь на точке спавна (защита от бесконечной смерти в катастрофе)
+  // ============================================================================
+  const anchorEntity = world.createEntity();
+  world.addComponent(anchorEntity, Transform as unknown as symbol, {
+    x: 500, y: GROUND_SURFACE_Y - 32, rotation: 0, scaleX: 1, scaleY: 1,
+  });
+  world.addComponent(anchorEntity, PhysicsBody as unknown as symbol, {
+    body: physics.createRectangleBody(anchorEntity, 500, GROUND_SURFACE_Y - 32, 60, 60, {
+      isStatic: true, label: 'gravity-anchor-spawn',
+    }),
+    gravityScale: 0, isSleeping: true,
+  });
+  world.addComponent(anchorEntity, Renderable as unknown as symbol, {
+    texture: TEX.gravityAnchor, tint: 0x4cc9f0, alpha: 1, visible: true, layer: 10,
+  });
+  render.addSprite(anchorEntity, TEX.gravityAnchor, 10, 60, 60);
+  world.addComponent(anchorEntity, GravityAnchor as unknown as symbol, {
+    active: true,
+    radius: 250,
+    energyPerSecond: 0,
+    anchoredEntities: [player],
+  });
+  world.addComponent(anchorEntity, Material as unknown as symbol, {
+    mass: 0, density: 5000, strength: 50000, durability: 1,
+    sailArea: 0, airResistance: 1, state: 'solid',
+    temperature: 20, burnable: false, flammable: false, thermalConductivity: 2.0,
+  });
+
+  // ============================================================================
+  // Парящие каменные острова / потолок пещеры (поймают игрока при инверсии гравитации)
+  // ============================================================================
+  const ceilingY = GROUND_SURFACE_Y - 600;
+  for (let cx = 0; cx < LEVEL_WIDTH; cx += 240) {
+    const ceilingEntity = world.createEntity();
+    const cw = 160 + Math.random() * 80;
+    const ch = 40 + Math.random() * 40;
+    world.addComponent(ceilingEntity, Transform as unknown as symbol, {
+      x: cx + cw / 2, y: ceilingY, rotation: 0, scaleX: 1, scaleY: 1,
+    });
+    world.addComponent(ceilingEntity, PhysicsBody as unknown as symbol, {
+      body: physics.createRectangleBody(ceilingEntity, cx + cw / 2, ceilingY, cw, ch, {
+        isStatic: true, restitution: 0.3, friction: 0.6, label: `ceiling-${cx}`,
+      }),
+      gravityScale: 0, isSleeping: true,
+    });
+    world.addComponent(ceilingEntity, Renderable as unknown as symbol, {
+      texture: TEX.blockStone, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
+    });
+    render.addSprite(ceilingEntity, TEX.blockStone, 5, cw, ch);
+    world.addComponent(ceilingEntity, Material as unknown as symbol, {
+      mass: 0, density: 2000, strength: 10000, durability: 1,
+      sailArea: 0, airResistance: 1, state: 'solid',
+      temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.5,
+    });
+  }
+
+  // ============================================================================
+  // Предзагрузка текстур руды (чтобы блоки рендерились цветными, а не белыми)
+  // ============================================================================
+  await render.loadTexture(TEX.blockFerrite);
+  await render.loadTexture(TEX.blockResonit);
+  await render.loadTexture(TEX.blockStone);
+
   // Каменные блоки и руды — равномерно распределены по уровню
   const blocks: Array<{ x: number; y: number; w: number; h: number; type: TileType; tex: string }> = [];
   const oreTypes: Array<{ type: TileType; tex: string; weight: number }> = [
@@ -425,6 +487,7 @@ async function bootstrap(): Promise<void> {
     world.addComponent(entity, PhysicsBody as unknown as symbol, {
       body: physics.createRectangleBody(entity, sx, cy, 36, 32, {
         restitution: 0.1, friction: 0.5, density: 1, label: `scavenger-${i}`,
+        inertia: Infinity, // существо не кувыркается
       }),
       gravityScale: 1.0, isSleeping: false,
     });
@@ -440,6 +503,7 @@ async function bootstrap(): Promise<void> {
     world.addComponent(entity, PhysicsBody as unknown as symbol, {
       body: physics.createRectangleBody(entity, px, cy, 44, 36, {
         restitution: 0.1, friction: 0.5, density: 1, label: `predator-${i}`,
+        inertia: Infinity, // хищник не кувыркается
       }),
       gravityScale: 1.0, isSleeping: false,
     });
@@ -493,6 +557,9 @@ async function bootstrap(): Promise<void> {
       const playerBody = physics.getBody(player);
       if (playerBody) {
         render.follow(playerBody.position.x, playerBody.position.y, 0.12);
+        // Запрет вращения космонавта — всегда стоит вертикально
+        Matter.Body.setAngle(playerBody, 0);
+        Matter.Body.setAngularVelocity(playerBody, 0);
         const camPos = render.getCameraPosition();
         buildingSystem.setCameraPosition(camPos.x, camPos.y);
 

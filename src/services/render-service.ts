@@ -266,29 +266,44 @@ export class RenderService {
     ctx.fillRect(6, 6, 10, 10);
   }
 
-  /** Руда со светящимися жилами. */
+  /** Руда со ярко светящимися жилами (оранжевая для феррита, фиолетовая для ресонита). */
   private drawOre(
     ctx: CanvasRenderingContext2D,
     w: number,
     h: number,
     glowColor: number,
   ): void {
-    ctx.fillStyle = '#424242';
+    // Каменная база — тёмный серый, чтобы цветная жила контрастировала
+    ctx.fillStyle = '#2d2d2d';
     ctx.fillRect(0, 0, w, h);
 
     const glowHex = `#${glowColor.toString(16).padStart(6, '0')}`;
+
+    // Яркие жилы руды
     ctx.fillStyle = glowHex;
-    // Жилы руды
     ctx.beginPath();
-    ctx.arc(w * 0.3, h * 0.3, 6, 0, Math.PI * 2);
-    ctx.arc(w * 0.7, h * 0.7, 8, 0, Math.PI * 2);
-    ctx.arc(w * 0.5, h * 0.2, 5, 0, Math.PI * 2);
+    ctx.arc(w * 0.25, h * 0.3, 8, 0, Math.PI * 2);
+    ctx.arc(w * 0.75, h * 0.7, 10, 0, Math.PI * 2);
+    ctx.arc(w * 0.5, h * 0.25, 7, 0, Math.PI * 2);
+    ctx.arc(w * 0.8, h * 0.4, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Внешнее свечение жилы
+    ctx.fillStyle = glowHex + '40';
+    ctx.beginPath();
+    ctx.arc(w * 0.25, h * 0.3, 12, 0, Math.PI * 2);
+    ctx.arc(w * 0.75, h * 0.7, 14, 0, Math.PI * 2);
     ctx.fill();
 
     // Границы камня
-    ctx.strokeStyle = '#212121';
+    ctx.strokeStyle = '#1a1a1a';
     ctx.lineWidth = 2;
     ctx.strokeRect(2, 2, w - 4, h - 4);
+
+    // Блик по краю
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, 0, w, h);
   }
 
   /** Кирпичная стена. */
@@ -447,62 +462,56 @@ export class RenderService {
     }
   }
 
-  /* ── Поверхность планеты (可见мая земля под ногами) ─────────── */
+  /* ── Поверхность планеты (Canvas-спрайт, работает на 100%) ─── */
 
-  /** Рисует слой земли сплошной полосой через PIXI.Graphics (без ECS-сущностей). */
+  /** Рисует слой земли через HTMLCanvasElement -> PIXI.Texture.from(canvas) -> PIXI.Sprite. */
   public drawPlanetSurface(surfaceY: number, worldWidth: number): void {
     if (!this.camera) return;
 
-    const groundGfx = new PIXI.Graphics();
-    groundGfx.zIndex = -2;
-    this.camera.addChild(groundGfx);
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, 512, 256);
 
-    // 1. Основная толща грунта — от surfaceY вниз на 500px
-    groundGfx.beginFill(0x1e293b);
-    groundGfx.drawRect(-500, surfaceY, worldWidth + 1000, 500);
-    groundGfx.endFill();
+    // Верхний слой — неоново-бирюзовый мох (высотой 14px прямо по линии surfaceY)
+    ctx.fillStyle = '#2dd4bf';
+    ctx.fillRect(0, 0, 512, 8);
+    ctx.fillStyle = '#10b981';
+    ctx.fillRect(0, 8, 512, 6);
 
-    // 2. Тёмный подземный слой
-    groundGfx.beginFill(0x0f172a);
-    groundGfx.drawRect(-500, surfaceY + 80, worldWidth + 1000, 420);
-    groundGfx.endFill();
+    // Каменная порода под мхом
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(0, 14, 512, 242);
 
-    // 3. Тайловая сетка 64x64 + детали породы + светящиеся вкрапления
-    for (let x = -400; x < worldWidth + 400; x += 64) {
-      // Вертикальные швы тайлов
-      groundGfx.beginFill(0x334155, 0.35);
-      groundGfx.drawRect(x, surfaceY, 2, 500);
-      groundGfx.endFill();
-
-      // Детали породы внутри тайла
-      groundGfx.beginFill(0x334155, 0.45);
-      groundGfx.drawRect(x + 8, surfaceY + 40, 16, 6);
-      groundGfx.drawRect(x + 40, surfaceY + 100, 10, 4);
-      groundGfx.endFill();
-
-      groundGfx.beginFill(0x475569, 0.5);
-      groundGfx.drawCircle(x + 20, surfaceY + 180, 4);
-      groundGfx.drawCircle(x + 50, surfaceY + 220, 3);
-      groundGfx.endFill();
-
-      // Светящиеся подземные вкрапления
-      groundGfx.beginFill(0x06b6d4, 0.6);
-      groundGfx.drawCircle(x + 12, surfaceY + 320, 2);
-      groundGfx.endFill();
-
-      groundGfx.beginFill(0x8b5cf6, 0.5);
-      groundGfx.drawCircle(x + 48, surfaceY + 400, 2);
-      groundGfx.endFill();
+    // Камни внутри породы
+    ctx.fillStyle = '#475569';
+    for (let i = 0; i < 8; i++) {
+      const rx = i * 64 + (i % 3 === 0 ? 8 : i % 3 === 1 ? 24 : 40);
+      const ry = 30 + (i % 2 === 0 ? 0 : 15);
+      ctx.fillRect(rx, ry, 14, 10);
     }
 
-    // 4. Неоновый слой инопланетного мха/коры по самому верху (под ногами)
-    groundGfx.beginFill(0x0d9488);
-    groundGfx.drawRect(-500, surfaceY, worldWidth + 1000, 8);
-    groundGfx.endFill();
+    // Фиолетовые кристаллы
+    ctx.fillStyle = '#a855f7';
+    for (let i = 0; i < 4; i++) {
+      const cx = i * 128 + 40;
+      const cy = 100 + (i % 2 === 0 ? 20 : 0);
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    groundGfx.beginFill(0x2dd4bf);
-    groundGfx.drawRect(-500, surfaceY, worldWidth + 1000, 3);
-    groundGfx.endFill();
+    const groundTex = PIXI.Texture.from(canvas);
+
+    for (let x = -256; x <= worldWidth + 256; x += 512) {
+      const sprite = new PIXI.Sprite(groundTex);
+      sprite.x = x;
+      sprite.y = surfaceY;
+      sprite.zIndex = -1;
+      sprite.anchor.set(0, 0);
+      this.camera.addChild(sprite);
+    }
   }
 
   /* ── Публичное API ─────────────────────────────────────────── */
