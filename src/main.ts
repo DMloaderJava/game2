@@ -300,7 +300,7 @@ async function bootstrap(): Promise<void> {
     rotation: 0, scaleX: 1, scaleY: 1,
   });
   world.addComponent(groundEntity, PhysicsBody as unknown as symbol, {
-    body: physics.createRectangleBody(groundEntity, LEVEL_WIDTH / 2, GROUND_Y + GROUND_HEIGHT / 2, LEVEL_WIDTH, GROUND_HEIGHT, {
+    body: physics.createRectangleBody(groundEntity, LEVEL_WIDTH / 2, GROUND_Y + GROUND_HEIGHT / 2, LEVEL_WIDTH, GROUND_HEIGHT * 4, {
       isStatic: true, label: 'ground',
     }),
     gravityScale: 0, isSleeping: true,
@@ -406,9 +406,9 @@ async function bootstrap(): Promise<void> {
   const gravitySystem = new GravitySystem(world, physics, eventBus);
   // Инициализируем глобальную гравитацию — иначе игрок будет парить в воздухе
   // Значения подобраны так, чтобы сила гравитации была адекватной (не выстреливала игрока в космос)
-  gravitySystem.setGlobalGravity(new Vec2(0, 60), 1, true);
+  gravitySystem.setGlobalGravity(new Vec2(0, 1), 0.001, true);
   const tideSystem = new GravityTideSystem(eventBus, physics, gravitySystem, render);
-  tideSystem.setNextGravityVector(0, -30); // инверсия гравитации вверх при прилив (0.5x от нормы)
+  tideSystem.setNextGravityVector(0, -0.4); // инверсия гравитации вверх при прилив (0.4x от нормы)
 
   world.addSystem(new InputSystem(input, eventBus));           // 10
   world.addSystem(new CharacterSystem(eventBus));              // 12
@@ -442,9 +442,9 @@ async function bootstrap(): Promise<void> {
         const playerTransform = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number; rotation?: number } | undefined;
         if (playerTransform) {
           if (playerTransform.y > 2000 || playerTransform.y < -1500) {
-            // Смерть игрока — респавн на поверхности (над землей)
+            // Смерть игрока — респавн над поверхностью земли
             const spawnX = 500;
-            const spawnY = 450;
+            const spawnY = GROUND_Y - GROUND_HEIGHT * 2 - 60; // над толстым полом
             playerTransform.x = spawnX;
             playerTransform.y = spawnY;
             if (playerTransform.rotation !== undefined) {

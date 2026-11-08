@@ -185,11 +185,16 @@ export class GravitySystem extends System {
 
       if (!forceData.dirty || !bodyData.body) continue;
 
-      const force = forceData.vector.mul(material.mass);
-      this.physics.applyForce(bodyData.body, force);
+      // Ограничиваем силу гравитации, чтобы не выстреливать тела в космос
+    const rawForce = forceData.vector.mul(material.mass);
+    const clampedForce = new Vec2(
+      Math.max(-500, Math.min(500, rawForce.x)),
+      Math.max(-500, Math.min(500, rawForce.y)),
+    );
+    this.physics.applyForce(bodyData.body, clampedForce);
 
-      forceData.dirty = false;
-      this.worldRef.addComponent(entity, GravityForce as unknown as symbol, forceData);
+    forceData.dirty = false;
+    this.worldRef.addComponent(entity, GravityForce as unknown as symbol, forceData);
     }
   }
 

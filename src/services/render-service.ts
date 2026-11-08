@@ -12,7 +12,7 @@ export class RenderService {
   layers = new Map<number, PIXI.Container>();
   private displayObjects = new Map<number, any>();
   private textures = new Map<string, PIXI.Texture>();
-  private bgColor = 0x0d1326;
+  private bgColor = 0x111827;
 
   async init(options: { width: number; height: number; background?: number }): Promise<void> {
     this.app = new PIXI.Application();
@@ -90,7 +90,7 @@ export class RenderService {
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
     ctx.fillRect(0, 0, size, size);
-    return PIXI.Texture.from(canvas);
+    return PIXI.Texture.from(canvas.toDataURL());
   }
 
   /** Загрузить текстуру по URL (кешируется). В Arena-preview iframe браузер
@@ -190,8 +190,9 @@ export class RenderService {
   follow(targetX: number, targetY: number, lerp = 0.15): void {
     if (!this.camera || !this.app) return;
     const screen = this.app.renderer.screen;
-    this.camera.x += (screen.width / 2 - targetX - this.camera.x) * lerp;
-    this.camera.y += (screen.height / 2 - targetY - this.camera.y) * lerp;
+    // Камера держит игрока ровно в центре экрана
+    this.camera.x = screen.width / 2 - targetX;
+    this.camera.y = screen.height / 2 - targetY;
     // Ограничиваем камеру по вертикали, чтобы земля не уходила в черноту
     this.camera.y = Math.min(Math.max(this.camera.y, -400), 900);
   }

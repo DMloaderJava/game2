@@ -49,6 +49,17 @@ export class PhysicsService {
   step(delta: number): void {
     if (this.engine) {
       Matter.Engine.update(this.engine, delta * 1000, 1);
+
+      // ЖЕСТКОЕ ОГРАНИЧЕНИЕ вертикальной скорости — защита от туннелирования сквозь пол
+      const maxFallSpeed = 10;
+      const maxRiseSpeed = 8;
+      for (const body of this.world.bodies) {
+        if (body.velocity.y > maxFallSpeed) {
+          Matter.Body.setVelocity(body, { x: body.velocity.x, y: maxFallSpeed });
+        } else if (body.velocity.y < -maxRiseSpeed) {
+          Matter.Body.setVelocity(body, { x: body.velocity.x, y: -maxRiseSpeed });
+        }
+      }
     }
   }
 
