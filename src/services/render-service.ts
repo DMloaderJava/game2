@@ -90,7 +90,7 @@ export class RenderService {
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
     ctx.fillRect(0, 0, size, size);
-    return PIXI.Texture.from(canvas.toDataURL());
+    return PIXI.Texture.from(canvas);
   }
 
   /** Загрузить текстуру по URL (кешируется). В Arena-preview iframe браузер
