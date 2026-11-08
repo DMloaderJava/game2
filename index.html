@@ -179,8 +179,81 @@
 
     <div id="pickup-toast"></div>
 
+    <!-- Стартовое сюжетное окно (брифинг миссии) -->
+    <div id="mission-briefing" style="
+      position:absolute;top:0;left:0;right:0;bottom:0;
+      background:rgba(5,5,10,0.92);z-index:100;pointer-events:auto;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      font-family:'Courier New',Courier,monospace;color:#e8e8f0;
+    ">
+      <div style="
+        max-width:640px;padding:32px;border:2px solid #4cc9f0;
+        background:rgba(10,10,16,0.95);box-shadow:0 0 40px rgba(76,201,240,0.2);
+        text-align:center;border-radius:8px;
+      ">
+        <div style="font-size:20px;letter-spacing:4px;color:#4cc9f0;margin-bottom:20px;text-transform:uppercase;">
+          Миссия «Аврора-7»: Аварийная посадка
+        </div>
+        <div style="font-size:14px;line-height:1.8;color:#b0b0c8;margin-bottom:28px;text-align:left;">
+          Корабль потерпел крушение на планете в секторе GRAVITY: VOID.<br>
+          Каждые 25 секунд гравитация планеты переворачивается и выбрасывает всё живое в открытый космос.<br>
+          Удерживайся под защитой Гравитационного якоря, добывай Феррит и Резонит и построй Маяк спасения.
+        </div>
+        <button id="start-landing" style="
+          background:#4cc9f0;color:#05050a;border:none;padding:14px 36px;
+          font-size:16px;font-weight:bold;font-family:'Courier New',Courier,monospace;
+          cursor:pointer;border-radius:4px;letter-spacing:2px;text-transform:uppercase;
+        ">
+          НАЧАТЬ ВЫСАДКУ [КЛИКНИ ИЛИ НАЖМИ ПРОБЕЛ]
+        </button>
+      </div>
+    </div>
+
     <div id="controls">
       WASD — ДВИЖЕНИЕ · ПРОБЕЛ — ПРЫЖОК · E — ДОБЫТЬ · I — ИНВЕНТАРЬ · C — КРАФТ · 1/2/3 — СТРОИТЬ · Q/F — ПРИТЯНУТЬ/ОТТОЛКНУТЬ
+    </div>
+
+    <!-- Квест-лог: текущая цель миссии -->
+    <div id="quest-log" style="
+      position:absolute;top:110px;right:24px;z-index:10;
+      max-width:320px;pointer-events:none;
+    ">
+      <div class="tide-panel" style="border-left-color:#4cc9f0;">
+        <div class="tide-label" style="color:#4cc9f0;">Текущая цель миссии</div>
+        <div id="quest-text" class="tide-value" style="font-size:13px;line-height:1.5;">—</div>
+      </div>
+    </div>
+
+    <!-- Действия мышкой (снизу) -->
+    <div id="action-buttons" style="
+      position:absolute;bottom:60px;left:50%;transform:translateX(-50%);
+      z-index:10;display:flex;gap:8px;pointer-events:auto;
+    ">
+      <button id="btn-mine" style="
+        background:rgba(10,10,16,0.8);border:1px solid #4cc9f0;color:#4cc9f0;
+        padding:8px 16px;font-family:'Courier New',Courier,monospace;font-size:11px;
+        cursor:pointer;border-radius:4px;text-transform:uppercase;
+      ">[Добыть E]</button>
+      <button id="btn-inv" style="
+        background:rgba(10,10,16,0.8);border:1px solid #7c93ff;color:#7c93ff;
+        padding:8px 16px;font-family:'Courier New',Courier,monospace;font-size:11px;
+        cursor:pointer;border-radius:4px;text-transform:uppercase;
+      ">[Инвентарь I]</button>
+      <button id="btn-craft" style="
+        background:rgba(10,10,16,0.8);border:1px solid #c084fc;color:#c084fc;
+        padding:8px 16px;font-family:'Courier New',Courier,monospace;font-size:11px;
+        cursor:pointer;border-radius:4px;text-transform:uppercase;
+      ">[Крафт C]</button>
+      <button id="btn-pull" style="
+        background:rgba(10,10,16,0.8);border:1px solid #38bdf8;color:#38bdf8;
+        padding:8px 16px;font-family:'Courier New',Courier,monospace;font-size:11px;
+        cursor:pointer;border-radius:4px;text-transform:uppercase;
+      ">[Притянуть Q]</button>
+      <button id="btn-push" style="
+        background:rgba(10,10,16,0.8);border:1px solid #ff6600;color:#ff6600;
+        padding:8px 16px;font-family:'Courier New',Courier,monospace;font-size:11px;
+        cursor:pointer;border-radius:4px;text-transform:uppercase;
+      ">[Оттолкнуть F]</button>
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>

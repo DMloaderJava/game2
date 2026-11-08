@@ -43,6 +43,20 @@ window.addEventListener('error', (e) => {
   el.textContent = 'RUNTIME ERROR: ' + (e.error?.stack || e.message);
 });
 
+// Перехват необработанных Promise rejection — иначе bootstrap() упадёт молча и будет чёрный экран
+window.addEventListener('unhandledrejection', (e) => {
+  const msg = e.reason?.stack || e.reason?.message || String(e.reason);
+  let el = document.getElementById('debug-err');
+  if (!el) {
+    el = document.createElement('pre');
+    el.id = 'debug-err';
+    el.style.cssText = 'position:fixed;top:40%;left:5%;right:5%;background:#7f1d1d;color:#fff;padding:12px;z-index:99999;white-space:pre-wrap;font-size:14px;border:2px solid red;';
+    document.body.appendChild(el);
+  }
+  el.textContent = 'UNHANDLED REJECTION: ' + msg;
+  console.error('UNHANDLED REJECTION:', e.reason);
+});
+
 import { InputSystem } from './systems/input-system';
 import { CharacterSystem } from './systems/character-system';
 import { StaminaEnergySystem } from './systems/stamina-energy-system';
@@ -531,8 +545,35 @@ async function bootstrap(): Promise<void> {
         // Запрет вращения космонавта — всегда стоит вертикально
         Matter.Body.setAngle(playerBody, 0);
         Matter.Body.setAngularVelocity(playerBody, 0);
-        const camPos = render.getCameraPosition();
-        buildingSystem.setCameraPosition(camPos.x, camPos.y);
+
+        // ----- Сцена приземления (высадка с капсулы) -----
+        if (landingActive) {
+          landingProgress += alpha * 0.5; // ~2 секунды приземления
+          const t = Math.min(landingProgress, 1);
+          const startY = GROUND_SURFACE_Y - 320;
+          const endY = GROUND_SURFACE_Y - 28;
+          const currentY = startY + (endY - startY) * t;
+          // Позиция тела и трансформа
+          Matter.Body.setPosition(playerBody, { x: 500, y: currentY });
+          if (playerTransform) {
+            playerTransform.x = 500;
+            playerTransform.y = currentY;
+          }
+          // Камера следует за descenso
+          render.follow(500, currentY, 0.12);
+          // Частицы пыли при касании поверхности
+          if (t >= 0.95 && landingProgress > 0.95) {
+            landingActive = false;
+            questStage = 1;
+            updateQuestLog();
+            showPickupToast('Приземление завершено', 0);
+          }
+          const camPos = render.getCameraPosition();
+          buildingSystem.setCameraPosition(camPos.x, camPos.y);
+        } else {
+          const camPos = render.getCameraPosition();
+          buildingSystem.setCameraPosition(camPos.x, camPos.y);
+        }
 
         // Killzone: смерть при вылете за границы карты
         if (playerTransform) {
@@ -592,6 +633,42 @@ async function bootstrap(): Promise<void> {
           const idleTex = [TEX.playerIdle0, TEX.playerIdle1][idleFrame];
           playerSprite.texture = render.getTexture(idleTex) ?? playerSprite.texture;
           playerSprite.scale.x = Math.abs(playerSprite.scale.x); // сброс зеркаливания
+        }
+
+        // ----- Квест-лог: отслеживание прогресса -----
+        const playerTransformQuest = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number } | undefined;
+        if (playerTransformQuest && questStage === 1) {
+          const dx = playerTransformQuest.x - lastPlayerX.x;
+          if (Math.abs(dx) >= 60) {
+            questStage = 2;
+            updateQuestLog();
+            showPickupToast('Цель 1/4達成: путь к руде', 0);
+          }
+        }
+        if (playerTransformQuest && questStage === 3) {
+          // Проверка: игрок в купола во время катастрофы
+          const tidePhase = tideSystem.getCurrentPhase();
+          if (tidePhase === 'catastrophe') {
+            let inDome = false;
+            const anchors = world.query(GravityAnchor as unknown as symbol, Transform as unknown as symbol);
+            for (const { components } of anchors) {
+              const anchorData = components[0] as { active: boolean; radius: number };
+              const anchorTransform = components[1] as { x: number; y: number };
+              if (anchorData.active && anchorTransform) {
+                const ddx = playerTransformQuest.x - anchorTransform.x;
+                const ddy = playerTransformQuest.y - anchorTransform.y;
+                if (Math.hypot(ddx, ddy) <= anchorData.radius) {
+                  inDome = true;
+                  break;
+                }
+              }
+            }
+            if (inDome) {
+              questStage = 4;
+              updateQuestLog();
+              showPickupToast('Цель 3/4: выжили в катастрофе', 0);
+            }
+          }
         }
       }
       renderSystem.draw(world, alpha);
@@ -776,6 +853,180 @@ async function bootstrap(): Promise<void> {
   let resResonit = 0;
   let selectedBuild = 'stone_wall'; // 1=стена, 2=якорь, 3=купол
 
+  // ----- Состояние миссии и брифинга -----
+  let gameStarted = false;
+  let landingActive = false;
+  let landingProgress = 0; // 0..1
+  let questStage = 0; // 0=не начато, 1=приземлился, 2=добыл руду, 3=укрылся, 4=построил
+  let blocksMined = 0;
+  let playerHasMoved = false;
+  const lastPlayerX = { x: 500 };
+
+  const questLogEl = document.getElementById('quest-text');
+  const briefingEl = document.getElementById('mission-briefing');
+  const startBtn = document.getElementById('start-landing');
+
+  const QUEST_TEXTS: Record<number, string> = {
+    0: '1/4: Приземлись и пройди к месторождению руды (A/D или Стрелки, Пробел — прыжок)',
+    1: '1/4: Приземлись и пройди к месторождению руды (A/D или Стрелки, Пробел — прыжок)',
+    2: '2/4: Добудь 2 ед. Ферритовой или Резонитовой руды (подойди к кристаллам и зажми [E] или кликни ЛКМ)',
+    3: '3/4: Укройся внутри синего купола Гравитационного якоря и переживи Гравитационный прилив!',
+    4: '4/4: Открой модуль крафта [C] и собери новый Гравитационный якорь или стену укрытия [1/2/3]',
+  };
+
+  function updateQuestLog(): void {
+    if (!questLogEl) return;
+    questLogEl.textContent = QUEST_TEXTS[questStage] || QUEST_TEXTS[0];
+  }
+
+  // Начало высадки по клику на кнопку или клавише Пробел
+  function startLanding(): void {
+    if (gameStarted) return;
+    gameStarted = true;
+    landingActive = true;
+    landingProgress = 0;
+    if (briefingEl) briefingEl.style.display = 'none';
+    // Захват фокуса для управления в iframe
+    window.focus();
+    const canvasEl = document.querySelector('canvas');
+    if (canvasEl) {
+      (canvasEl as HTMLCanvasElement).tabIndex = 1;
+      (canvasEl as HTMLCanvasElement).focus();
+    }
+    updateQuestLog();
+  }
+
+  if (startBtn) {
+    startBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      startLanding();
+    });
+  }
+  window.addEventListener('keydown', (e) => {
+    if (!gameStarted && (e.key === ' ' || e.key === 'Enter')) {
+      e.preventDefault();
+      startLanding();
+    }
+  });
+
+  // Кнопки действий снизу
+  const btnMine = document.getElementById('btn-mine');
+  const btnInv = document.getElementById('btn-inv');
+  const btnCraft = document.getElementById('btn-craft');
+  const btnPull = document.getElementById('btn-pull');
+  const btnPush = document.getElementById('btn-push');
+
+  if (btnMine) btnMine.addEventListener('click', () => {
+    (window as any).__miningActive = true;
+    setTimeout(() => { (window as any).__miningActive = false; }, 300);
+  });
+  if (btnInv) btnInv.addEventListener('click', () => {
+    const inv = world.getComponent(player, Inventory as unknown as symbol) as { open: boolean };
+    if (inv) { inv.open = !inv.open; world.addComponent(player, Inventory as unknown as symbol, inv); }
+  });
+  if (btnCraft) btnCraft.addEventListener('click', () => craftingSystem.toggle());
+  if (btnPull) btnPull.addEventListener('click', () => {
+    const stats = world.getComponent(player, CharacterStats as unknown as symbol) as { energy: number; exhausted: boolean } | undefined;
+    const playerBodyLanding = physics.getBody(player);
+    const playerTransformLanding = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number } | undefined;
+    if (!playerBodyLanding || !playerTransformLanding || !stats || stats.exhausted) return;
+    const actors = world.query(PhysicsBody, Transform, Material);
+    for (const { entity, components } of actors) {
+      if (entity === player) continue;
+      const bodyData = components[0] as { body: { isStatic: boolean } };
+      const bodyTransform = components[1] as { x: number; y: number };
+      if (bodyData.body.isStatic) continue;
+      const dx = playerTransformLanding.x - bodyTransform.x;
+      const dy = playerTransformLanding.y - bodyTransform.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0 && dist <= 250) {
+        physics.applyForce(bodyData.body, new Vec2((dx / dist) * 400, (dy / dist) * 400));
+      }
+    }
+    showAbilityWave(playerTransformLanding.x, playerTransformLanding.y, 0x4cc9f0);
+  });
+  if (btnPush) btnPush.addEventListener('click', () => {
+    const stats = world.getComponent(player, CharacterStats as unknown as symbol) as { energy: number; exhausted: boolean } | undefined;
+    const playerBodyLanding = physics.getBody(player);
+    const playerTransformLanding = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number } | undefined;
+    if (!playerBodyLanding || !playerTransformLanding || !stats || stats.exhausted) return;
+    const actors = world.query(PhysicsBody, Transform, Material);
+    for (const { entity, components } of actors) {
+      if (entity === player) continue;
+      const bodyData = components[0] as { body: { isStatic: boolean } };
+      const bodyTransform = components[1] as { x: number; y: number };
+      if (bodyData.body.isStatic) continue;
+      const dx = bodyTransform.x - playerTransformLanding.x;
+      const dy = bodyTransform.y - playerTransformLanding.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0 && dist <= 250) {
+        physics.applyForce(bodyData.body, new Vec2((dx / dist) * 400, (dy / dist) * 400));
+      }
+    }
+    showAbilityWave(playerTransformLanding.x, playerTransformLanding.y, 0xff6600);
+  });
+
+  // ----- Клик мышкой по блоку руды для добычи -----
+  const canvasEl = document.querySelector('canvas');
+  if (canvasEl) {
+    canvasEl.addEventListener('mousedown', (e) => {
+      if (!gameStarted) return;
+      const rect = canvasEl.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const camPos = render.getCameraPosition();
+      const worldX = camPos.x * -1 + mx + window.innerWidth / 2;
+      const worldY = camPos.y * -1 + my + window.innerHeight / 2;
+      const playerBodyClick = physics.getBody(player);
+      const playerTransformClick = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number } | undefined;
+      if (!playerBodyClick || !playerTransformClick) return;
+      const distToPlayer = Math.hypot(worldX - playerTransformClick.x, worldY - playerTransformClick.y);
+      if (distToPlayer > 180) return;
+      // Ищем блок руды под курсором
+      const miningBodies = world.query(PhysicsBody, Transform, Material, Mineable);
+      for (const { entity, components } of miningBodies) {
+        const bodyData = components[0] as { body: { x: number; y: number; isStatic: boolean } };
+        const transformData = components[1] as { x: number; y: number };
+        const mineable = components[3] as { tileType: string; health: number };
+        if (!mineable || mineable.health <= 0) continue;
+        const dx = transformData.x - worldX;
+        const dy = transformData.y - worldY;
+        if (Math.hypot(dx, dy) <= 40) {
+          // Добываем блок
+          mineable.health -= 20;
+          world.addComponent(entity, Mineable as unknown as symbol, mineable);
+          (window as any).__miningActive = true;
+          setTimeout(() => { (window as any).__miningActive = false; }, 300);
+          showPickupToast('Добыча...', 0);
+          if (mineable.health <= 0) {
+            // Блок уничтожен
+            const dropForType: Record<string, { drop: string; amount: number }> = {
+              stone: { drop: 'stone_slabs', amount: 1 },
+              ferrite_ore: { drop: 'ferrite_ore', amount: 1 },
+              resonit_ore: { drop: 'resonit', amount: 1 },
+            };
+            const drop = dropForType[mineable.tileType] ?? dropForType.stone;
+            if (drop.drop === 'ferrite_ore') resFerrite += drop.amount;
+            else if (drop.drop === 'resonit') resResonit += drop.amount;
+            else resStone += drop.amount;
+            blocksMined++;
+            if (blocksMined >= 2 && questStage === 2) {
+              questStage = 3;
+              updateQuestLog();
+              showPickupToast('Цель 2/4: руда добыта', 0);
+            }
+            showPickupToast(`+${drop.amount} ${drop.drop}`, 0);
+            physics.removeBody(entity);
+            world.removeComponent(entity, PhysicsBody as unknown as symbol);
+            world.removeComponent(entity, Renderable as unknown as symbol);
+            render.removeSprite(entity);
+          }
+          break;
+        }
+      }
+    });
+  }
+
   const toastEl = document.getElementById('pickup-toast');
   let toastTimeout: number | null = null;
 
@@ -893,6 +1144,12 @@ async function bootstrap(): Promise<void> {
     if (id === 'stone_slabs') resStone += cnt;
     else if (id === 'ferrite_ore') resFerrite += cnt;
     else if (id === 'resonit') resResonit += cnt;
+    blocksMined++;
+    if (blocksMined >= 2 && questStage === 2) {
+      questStage = 3;
+      updateQuestLog();
+      showPickupToast('Цель 2/4: руда добыта', 0);
+    }
   });
 
   // Слушаем события прилива для HUD
@@ -911,6 +1168,6 @@ bootstrap().catch((err) => {
   console.error('Failed to bootstrap game:', err);
   const errDiv = document.createElement('pre');
   errDiv.style.cssText = 'position:fixed;top:50%;left:10%;right:10%;background:#7f1d1d;color:#fff;padding:16px;z-index:99999;white-space:pre-wrap;font-size:14px;border:2px solid red;';
-  errDiv.textContent = 'BOOTSTRAP ERROR:\n' + (err?.stack || err?.message || String(err));
+  errDiv.textContent = 'BOOTSTRAP ERROR:\\n' + (err?.stack || err?.message || String(err));
   document.body.appendChild(errDiv);
 });

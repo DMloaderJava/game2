@@ -73,7 +73,11 @@ export class RenderService {
     }
 
     // Фоновая атмосфера планеты (звёзды, кольцо газового гиганта, горы) с zIndex=-10
-    this.addAtmosphereBackground(this.camera, 3000, this.app.renderer.screen.width, this.app.renderer.screen.height);
+    try {
+      this.addAtmosphereBackground(this.camera, 3000, this.app.renderer.screen.width, this.app.renderer.screen.height);
+    } catch (err) {
+      console.warn('Atmosphere background skipped:', err);
+    }
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
@@ -829,6 +833,89 @@ export class RenderService {
   /** Предзагрузить список текстур. */
   async loadTextures(urls: string[]): Promise<void> {
     await Promise.all(urls.map((u) => this.loadTexture(u)));
+  }
+
+  /** Загрузить PNG с автоматическим удалением фона по угловым пикселям. */
+  async loadSpriteWithoutBackground(src: string, width: number, height: number): Promise<PIXI.Texture> {
+    if (this.textures.has(src)) return this.textures.get(src)!;
+
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d')!;
+          ctx.clearRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const imageData = ctx.getImageData(0, 0, width, height);
+          const data = imageData.data;
+
+          // Определяем цвет фона по угловым пикселям
+          const corners = [
+            { r: data[0], g: data[1], b: data[2] },          // (0,0)
+            { r: data[(width - 1) * 4], g: data[(width - 1) * 4 + 1], b: data[(width - 1) * 4 + 2] }, // (w-1,0)
+            { r: data[(height - 1) * width * 4], g: data[(height - 1) * width * 4 + 1], b: data[(height - 1) * width * 4 + 2] }, // (0,h-1)
+            { r: data[(width - 1 + (height - 1) * width) * 4], g: data[(width - 1 + (height - 1) * width) * 4 + 1], b: data[(width - 1 + (height - 1) * width) * 4 + 2] }, // (w-1,h-1)
+          ];
+          const bgR = Math.round((corners[0].r + corners[1].r + corners[2].r + corners[3].r) / 4);
+          const bgG = Math.round((corners[0].g + corners[1].g + corners[2].g + corners[3].g) / 4);
+          const bgB = Math.round((corners[0].b + corners[1].b + corners[2].b + corners[3].b) / 4);
+
+          // Flood-fill от краев: убираем все пиксели близкие к цвету фона
+          const visited = new Uint8Array(width * height);
+          const stack: number[] = [];
+          const pushIfEdge = (x: number, y: number) => {
+            if (x < 0 || x >= width || y < 0 || y >= height) return;
+            const idx = (y * width + x) * 4;
+            if (visited[y * width + x]) return;
+            const dr = Math.abs(data[idx] - bgR);
+            const dg = Math.abs(data[idx + 1] - bgG);
+            const db = Math.abs(data[idx + 2] - bgB);
+            if (dr < 45 && dg < 45 && db < 45) {
+              visited[y * width + x] = 1;
+              stack.push(y * width + x);
+            }
+          };
+          // Засеиваем все граничные пиксели
+          for (let x = 0; x < width; x++) { pushIfEdge(x, 0); pushIfEdge(x, height - 1); }
+          for (let y = 0; y < height; y++) { pushIfEdge(0, y); pushIfEdge(width - 1, y); }
+
+          while (stack.length > 0) {
+            const pos = stack.pop()!;
+            const y = Math.floor(pos / width);
+            const x = pos % width;
+            // Соседи
+            pushIfEdge(x + 1, y);
+            pushIfEdge(x - 1, y);
+            pushIfEdge(x, y + 1);
+            pushIfEdge(x, y - 1);
+          }
+
+          // Выставляем alpha = 0 для всех посещённых (фоновых) пикселей
+          for (let i = 0; i < visited.length; i++) {
+            if (visited[i]) {
+              data[i * 4 + 3] = 0;
+            }
+          }
+
+          ctx.putImageData(imageData, 0, 0);
+
+          const texture = PIXI.Texture.from(canvas);
+          this.textures.set(src, texture);
+          resolve(texture);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = () => {
+        reject(new Error(`Failed to load image: ${src}`));
+      };
+      img.src = src;
+    });
   }
 
   getTexture(url: string): PIXI.Texture | undefined {
