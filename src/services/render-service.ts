@@ -12,7 +12,7 @@ export class RenderService {
   layers = new Map<number, PIXI.Container>();
   private displayObjects = new Map<number, any>();
   private textures = new Map<string, PIXI.Texture>();
-  private bgColor = 0x05050a;
+  private bgColor = 0x0d1326;
 
   async init(options: { width: number; height: number; background?: number }): Promise<void> {
     this.app = new PIXI.Application();
@@ -192,6 +192,8 @@ export class RenderService {
     const screen = this.app.renderer.screen;
     this.camera.x += (screen.width / 2 - targetX - this.camera.x) * lerp;
     this.camera.y += (screen.height / 2 - targetY - this.camera.y) * lerp;
+    // Ограничиваем камеру по вертикали, чтобы земля не уходила в черноту
+    this.camera.y = Math.min(Math.max(this.camera.y, -400), 900);
   }
 
   /** Получить текущую позицию камеры. */

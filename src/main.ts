@@ -405,9 +405,10 @@ async function bootstrap(): Promise<void> {
   buildingSystem.setPhysicsService(physics);
   const gravitySystem = new GravitySystem(world, physics, eventBus);
   // Инициализируем глобальную гравитацию — иначе игрок будет парить в воздухе
-  gravitySystem.setGlobalGravity(new Vec2(0, 9.81 * 60), 1, true);
+  // Значения подобраны так, чтобы сила гравитации была адекватной (не выстреливала игрока в космос)
+  gravitySystem.setGlobalGravity(new Vec2(0, 60), 1, true);
   const tideSystem = new GravityTideSystem(eventBus, physics, gravitySystem, render);
-  tideSystem.setNextGravityVector(0, -9.81 * 60); // инверсия гравитации вверх при прилив
+  tideSystem.setNextGravityVector(0, -30); // инверсия гравитации вверх при прилив (0.5x от нормы)
 
   world.addSystem(new InputSystem(input, eventBus));           // 10
   world.addSystem(new CharacterSystem(eventBus));              // 12
@@ -441,9 +442,11 @@ async function bootstrap(): Promise<void> {
         const playerTransform = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number; rotation?: number } | undefined;
         if (playerTransform) {
           if (playerTransform.y > 2000 || playerTransform.y < -1500) {
-            // Смерть игрока — респавн на поверхности
-            playerTransform.x = 200;
-            playerTransform.y = 300;
+            // Смерть игрока — респавн на поверхности (над землей)
+            const spawnX = 500;
+            const spawnY = 450;
+            playerTransform.x = spawnX;
+            playerTransform.y = spawnY;
             if (playerTransform.rotation !== undefined) {
               playerTransform.rotation = 0;
             }
@@ -456,9 +459,10 @@ async function bootstrap(): Promise<void> {
               stats.exhausted = false;
               world.addComponent(player, CharacterStats as unknown as symbol, stats);
             }
-            // Сбрасываем скорость и позицию тела
+            // Сбрасываем скорость, угловую скорость и позицию тела Matter.js
             physics.setVelocity(playerBody, 0, 0);
-            physics.setPosition(playerBody, 200, 300);
+            physics.setAngularVelocity(playerBody, 0);
+            physics.setPosition(playerBody, spawnX, spawnY);
             showPickupToast('Смерть: выход за границы карты', 0);
           }
         }

@@ -18,7 +18,7 @@ export class PhysicsService {
     gravityY: number;
   }): void {
     this.engine = Matter.Engine.create({
-      gravity: { x: options.gravityX, y: options.gravityY },
+      gravity: { x: 0, y: 0 },
       enableSleeping: true,
     });
     this.world = this.engine.world;
