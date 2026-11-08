@@ -191,12 +191,7 @@ export class GravityTideSystem extends System {
       this.eventBus.emit('tide:warning-pulse', { timeRemaining });
     }
 
-    // Пульсация красного оттенка при предупреждении
-    this._warningTintTime += dt;
-    const pulse = Math.sin(this._warningTintTime * 4) * 0.3 + 0.7;
-    if (this.render.app?.stage) {
-      this.render.app.stage.tint = 0xffffff * pulse;
-    }
+    // Пульсация убрана — цвета текстур не искажаются
   }
 
   /* ── Фаза 3: Катастрофа ───────────────────────────────────── */
@@ -204,10 +199,7 @@ export class GravityTideSystem extends System {
   private updateCatastrophePhase(world: World, dt: number): void {
     if (!this.tide) return;
 
-    // Красный оттенок сцены при катастрофе
-    if (this.render.app?.stage) {
-      this.render.app.stage.tint = 0xff6666;
-    }
+    // Красный оттенок убран — цвета текстур не искажаются
 
     // Тряска камеры
     this._cameraShakeTime += dt;
@@ -236,10 +228,7 @@ export class GravityTideSystem extends System {
   private updateAftermathPhase(world: World, dt: number): void {
     if (!this.tide) return;
 
-    // Сбрасываем визуальные эффекты при выходе из катастрофы
-    if (this.render.app?.stage) {
-      this.render.app.stage.tint = 0xffffff;
-    }
+    // Сброс визуальных эффектов не требуется — цвета не менялись
 
     if (this.tide.phaseTimer < 0.1) {
       const mutations = world.query('world-mutation' as unknown as symbol);

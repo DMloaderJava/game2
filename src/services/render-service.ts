@@ -16,13 +16,13 @@ export class RenderService {
     // Блоки мира
     block_dirt: 0x654321,
     block_stone: 0x808080,
-    block_ferrite: 0xa9a9a9,
-    block_resonit: 0x9370db,
+    block_ferrite: 0xff6600,
+    block_resonit: 0xaa00ff,
     block_stone_wall: 0x646464,
     // Предметы
     item_stone_slabs: 0xa0a0a0,
-    item_ferrite_ore: 0xb4b4b4,
-    item_resonit: 0xb478ff,
+    item_ferrite_ore: 0xff6600,
+    item_resonit: 0xaa00ff,
     item_biovolume: 0x228b22,
     item_biogel: 0x32cd32,
     item_ancient_fragment: 0xdaa520,
@@ -37,16 +37,11 @@ export class RenderService {
     player_idle: 0xffdcb1,
     player_idle_0: 0xffdcb1,
     player_idle_1: 0xffdcb1,
-    player_idle_2: 0xffdcb1,
-    player_idle_3: 0xffdcb1,
-    player_walk: 0xffdcb1,
-    player_walk_0: 0xffdcb1,
-    player_walk_1: 0xffdcb1,
-    player_walk_2: 0xffdcb1,
-    player_walk_3: 0xffdcb1,
-    player_walk_4: 0xffdcb1,
-    player_walk_5: 0xffdcb1,
+    player_run_0: 0xffdcb1,
+    player_run_1: 0xffdcb1,
+    player_run_2: 0xffdcb1,
     player_jump: 0xffdcb1,
+    player_mine: 0xffdcb1,
     player_idle_style: 0xffdcb1,
     // UI
     bgSpace: 0x05050a,
@@ -77,29 +72,46 @@ export class RenderService {
       this.layers.set(layer, container);
     }
 
-    // Фоновые декорации — звёзды и скалы с zIndex=-10 (позади игрока и земли)
-    this.addBackgroundDecorations(this.camera, 3000, this.app.renderer.screen.width, this.app.renderer.screen.height);
+    // Фоновая атмосфера планеты (звёзды, кольцо газового гиганта, горы) с zIndex=-10
+    this.addAtmosphereBackground(this.camera, 3000, this.app.renderer.screen.width, this.app.renderer.screen.height);
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
   }
 
-  /* ── Процедурная отрисовка текстур на canvas ───────────────── */
+  /* ── Процедурная отрисовка текстур на canvas (прозрачный фон) ──── */
 
   private createProceduralTexture(name: string, size = 64): PIXI.Texture {
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, size, size);
+    ctx.clearRect(0, 0, size, size); // прозрачный фон по умолчанию
 
     switch (name) {
-      // ── Игрок: космонавт ──
-      case 'player_idle':
+      // ── Игрок: космонавт — 6 кадров анимации (прозрачный фон) ──
       case 'player_idle_0':
+        this.drawAstronautIdle0(ctx, size, size);
+        break;
       case 'player_idle_1':
-      case 'player_idle_2':
-      case 'player_idle_3':
+        this.drawAstronautIdle1(ctx, size, size);
+        break;
+      case 'player_run_0':
+        this.drawAstronautRun0(ctx, size, size);
+        break;
+      case 'player_run_1':
+        this.drawAstronautRun1(ctx, size, size);
+        break;
+      case 'player_run_2':
+        this.drawAstronautRun2(ctx, size, size);
+        break;
+      case 'player_jump':
+        this.drawAstronautJump(ctx, size, size);
+        break;
+      case 'player_mine':
+        this.drawAstronautMine(ctx, size, size);
+        break;
+      case 'player_idle':
       case 'player_walk':
       case 'player_walk_0':
       case 'player_walk_1':
@@ -107,30 +119,22 @@ export class RenderService {
       case 'player_walk_3':
       case 'player_walk_4':
       case 'player_walk_5':
-        this.drawAstronaut(ctx, size, size, 'idle');
-        break;
-
-      case 'player_jump':
-        this.drawAstronaut(ctx, size, size, 'jump');
+        this.drawAstronautIdle0(ctx, size, size);
         break;
 
       // ── Блоки мира ──
       case 'block_dirt':
-        this.drawGround(ctx, size, size);
+        this.drawGroundBlock(ctx, size, size);
         break;
-
       case 'block_stone':
-        this.drawStone(ctx, size, size);
+        this.drawStoneBlock(ctx, size, size);
         break;
-
       case 'block_ferrite':
-        this.drawOre(ctx, size, size, 0xff6600);
+        this.drawFerriteOre(ctx, size, size);
         break;
-
       case 'block_resonit':
-        this.drawOre(ctx, size, size, 0xaa00ff);
+        this.drawResonitOre(ctx, size, size);
         break;
-
       case 'block_stone_wall':
         this.drawStoneWall(ctx, size, size);
         break;
@@ -139,18 +143,16 @@ export class RenderService {
       case 'gravity_anchor':
         this.drawGravityAnchor(ctx, size, size);
         break;
-
       case 'energy_dome':
         this.drawEnergyDome(ctx, size, size);
         break;
 
-      // Существа
+      // Существа (2 кадра каждый)
       case 'creature_scavenger':
-        this.drawScavenger(ctx, size, size);
+        this.drawScavenger(ctx, size, size, 0);
         break;
-
       case 'creature_predator':
-        this.drawPredator(ctx, size, size);
+        this.drawPredator(ctx, size, size, 0);
         break;
 
       default:
@@ -160,96 +162,276 @@ export class RenderService {
     return PIXI.Texture.from(canvas);
   }
 
-  /** Одиночный цвет (fallback). */
-  private drawSolid(ctx: CanvasRenderingContext2D, w: number, h: number, color: number): void {
-    ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
-    ctx.fillRect(0, 0, w, h);
-  }
+  /* ── Космонавт — кадры анимации (прозрачный фон) ─────────────── */
 
-  /** Космонавт с шлемом, визором и ранцем. */
-  private drawAstronaut(
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number,
-    pose: 'idle' | 'jump',
-  ): void {
+  private drawAstronautIdle0(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     const cx = w / 2;
     const cy = h / 2;
-
     // Тело (скафандр)
     ctx.fillStyle = '#e0e0e0';
-    ctx.fillRect(cx - 12, cy - 6, 24, 14);
+    ctx.fillRect(cx - 10, cy - 4, 20, 12);
     ctx.fillStyle = '#c0c0c0';
-    ctx.fillRect(cx - 8, cy + 6, 16, 10);
-
+    ctx.fillRect(cx - 6, cy + 6, 12, 8);
     // Шлем
     ctx.fillStyle = '#d0d0d0';
     ctx.beginPath();
-    ctx.arc(cx, cy - 14, 10, 0, Math.PI * 2);
+    ctx.arc(cx, cy - 12, 9, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#808080';
     ctx.lineWidth = 2;
     ctx.stroke();
-
-    // Визор (светящийся голубой)
+    // Визор
     ctx.fillStyle = '#00ffff';
     ctx.beginPath();
-    ctx.ellipse(cx, cy - 14, 7, 5, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy - 12, 6, 4, 0, 0, Math.PI * 2);
     ctx.fill();
-
-    // Рюкзак / джетпак
+    // Ранец
     ctx.fillStyle = '#606060';
-    ctx.fillRect(cx + 14, cy - 2, 8, 12);
-
-    // Пламя джетпака при прыжке
-    if (pose === 'jump') {
-      ctx.fillStyle = '#ff4400';
-      ctx.fillRect(cx + 12, cy + 6, 6, 10);
-      ctx.fillStyle = '#ffaa00';
-      ctx.fillRect(cx + 14, cy + 8, 4, 6);
-    }
-
+    ctx.fillRect(cx + 11, cy - 1, 7, 10);
     // Руки
     ctx.fillStyle = '#c0c0c0';
-    ctx.fillRect(cx - 14, cy - 2, 6, 8);
-    ctx.fillRect(cx + 8, cy - 2, 6, 8);
-
+    ctx.fillRect(cx - 12, cy - 1, 5, 7);
+    ctx.fillRect(cx + 7, cy - 1, 5, 7);
     // Ноги
     ctx.fillStyle = '#404040';
-    ctx.fillRect(cx - 8, cy + 14, 6, 8);
-    ctx.fillRect(cx + 2, cy + 14, 6, 8);
+    ctx.fillRect(cx - 6, cy + 12, 5, 7);
+    ctx.fillRect(cx + 1, cy + 12, 5, 7);
   }
 
-  /** Слоистая инопланетная почва — яркая и контрастная. */
-  private drawGround(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+  private drawAstronautIdle1(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    // Тело с вдохом (смещение корпуса)
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(cx - 10, cy - 3, 20, 12);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 6, cy + 7, 12, 8);
+    // Шлем
+    ctx.fillStyle = '#d0d0d0';
+    ctx.beginPath();
+    ctx.arc(cx, cy - 11, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#808080';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Визор — свечение
+    ctx.fillStyle = '#40ffff';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 11, 7, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Ранец
+    ctx.fillStyle = '#606060';
+    ctx.fillRect(cx + 11, cy - 1, 7, 10);
+    // Руки
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 12, cy - 1, 5, 7);
+    ctx.fillRect(cx + 7, cy - 1, 5, 7);
+    // Ноги
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(cx - 6, cy + 12, 5, 7);
+    ctx.fillRect(cx + 1, cy + 12, 5, 7);
+  }
+
+  private drawAstronautRun0(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(cx - 10, cy - 4, 20, 12);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 6, cy + 6, 12, 8);
+    ctx.fillStyle = '#d0d0d0';
+    ctx.beginPath();
+    ctx.arc(cx, cy - 12, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#808080';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#00ffff';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 12, 6, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Ранец
+    ctx.fillStyle = '#606060';
+    ctx.fillRect(cx + 11, cy - 1, 7, 10);
+    // Ноги — шаг левой вперёд
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(cx - 9, cy + 10, 5, 9);
+    ctx.fillRect(cx + 3, cy + 13, 5, 6);
+    // Руки
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 12, cy - 1, 5, 7);
+    ctx.fillRect(cx + 7, cy - 1, 5, 7);
+  }
+
+  private drawAstronautRun1(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(cx - 10, cy - 3, 20, 12);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 6, cy + 7, 12, 8);
+    ctx.fillStyle = '#d0d0d0';
+    ctx.beginPath();
+    ctx.arc(cx, cy - 11, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#808080';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#00ffff';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 11, 6, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#606060';
+    ctx.fillRect(cx + 11, cy - 1, 7, 10);
+    // Ноги — фаза переката
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(cx - 4, cy + 11, 5, 8);
+    ctx.fillRect(cx + 1, cy + 13, 5, 7);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 12, cy - 1, 5, 7);
+    ctx.fillRect(cx + 7, cy - 1, 5, 7);
+  }
+
+  private drawAstronautRun2(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(cx - 10, cy - 4, 20, 12);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 6, cy + 6, 12, 8);
+    ctx.fillStyle = '#d0d0d0';
+    ctx.beginPath();
+    ctx.arc(cx, cy - 12, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#808080';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#00ffff';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 12, 6, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#606060';
+    ctx.fillRect(cx + 11, cy - 1, 7, 10);
+    // Ноги — шаг правой вперёд
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(cx - 3, cy + 13, 5, 6);
+    ctx.fillRect(cx + 8, cy + 10, 5, 9);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 12, cy - 1, 5, 7);
+    ctx.fillRect(cx + 7, cy - 1, 5, 7);
+  }
+
+  private drawAstronautJump(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(cx - 10, cy - 5, 20, 10);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 6, cy + 4, 12, 7);
+    ctx.fillStyle = '#d0d0d0';
+    ctx.beginPath();
+    ctx.arc(cx, cy - 13, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#808080';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#00ffff';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 13, 6, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Ранец
+    ctx.fillStyle = '#606060';
+    ctx.fillRect(cx + 11, cy - 2, 7, 9);
+    // Плазма из ранца
+    ctx.fillStyle = '#00ffff';
+    ctx.beginPath();
+    ctx.arc(cx + 14, cy + 6, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#40ffff';
+    ctx.beginPath();
+    ctx.arc(cx + 15, cy + 7, 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Ноги поджаты
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(cx - 5, cy + 9, 5, 6);
+    ctx.fillRect(cx + 0, cy + 10, 5, 6);
+    // Руки
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 12, cy - 1, 5, 7);
+    ctx.fillRect(cx + 7, cy - 1, 5, 7);
+  }
+
+  private drawAstronautMine(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(cx - 10, cy - 4, 20, 12);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 6, cy + 6, 12, 8);
+    ctx.fillStyle = '#d0d0d0';
+    ctx.beginPath();
+    ctx.arc(cx, cy - 12, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#808080';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#00ffff';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 12, 6, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#606060';
+    ctx.fillRect(cx + 11, cy - 1, 7, 10);
+    // Рука с резаком вытянута вперёд
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(cx - 15, cy - 1, 8, 6);
+    // Лазерный резак — вспышка
+    ctx.fillStyle = '#ff0000';
+    ctx.beginPath();
+    ctx.arc(cx - 18, cy + 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+    // Искры
+    ctx.fillStyle = '#ffff00';
+    ctx.beginPath();
+    ctx.arc(cx - 20, cy - 1, 1.5, 0, Math.PI * 2);
+    ctx.arc(cx - 19, cy + 3, 1.5, 0, Math.PI * 2);
+    ctx.arc(cx - 17, cy + 4, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Ноги
+    ctx.fillStyle = '#404040';
+    ctx.fillRect(cx - 6, cy + 12, 5, 7);
+    ctx.fillRect(cx + 1, cy + 12, 5, 7);
+  }
+
+  /* ── Блоки мира ──────────────────────────────────────────────── */
+
+  private drawGroundBlock(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     // Верхний слой — неоново-зелёный мох
     ctx.fillStyle = '#10b981';
     ctx.fillRect(0, 0, w, 8);
     ctx.fillStyle = '#06b6d4';
     ctx.fillRect(0, 8, w, 8);
-    // Каменное тело — тёмная фиолетово-серая порода
+    // Каменное тело
     ctx.fillStyle = '#334155';
     ctx.fillRect(0, 16, w, h - 16);
-    // Камни и вкрапления
+    // Камни
     ctx.fillStyle = '#475569';
-    for (let i = 0; i < w / 64; i++) {
-      const rx = (i * 64) + (i % 3 === 0 ? 8 : i % 3 === 1 ? 24 : 40);
-      const ry = 20 + (i % 2 === 0 ? 0 : 10);
-      ctx.fillRect(rx, ry, 12, 8);
+    for (let i = 0; i < w / 24; i++) {
+      const rx = i * 24 + (i % 3 === 0 ? 4 : i % 3 === 1 ? 10 : 16);
+      const ry = 20 + (i % 2 === 0 ? 0 : 8);
+      ctx.fillRect(rx, ry, 10, 6);
     }
     // Трещины
     ctx.strokeStyle = '#1e293b';
     ctx.lineWidth = 1;
-    for (let i = 0; i < w; i += 48) {
+    for (let i = 0; i < w; i += 24) {
       ctx.beginPath();
       ctx.moveTo(i, 16);
-      ctx.lineTo(i + 20, h);
+      ctx.lineTo(i + 12, h);
       ctx.stroke();
     }
   }
 
-  /** Каменный блок с трещинами. */
-  private drawStone(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+  private drawStoneBlock(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     ctx.fillStyle = '#616161';
     ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = '#424242';
@@ -261,85 +443,103 @@ export class RenderService {
     ctx.lineTo(8, h - 8);
     ctx.closePath();
     ctx.stroke();
-    // Блик
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
     ctx.fillRect(6, 6, 10, 10);
   }
 
-  /** Руда со ярко светящимися жилами (оранжевая для феррита, фиолетовая для ресонита). */
-  private drawOre(
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number,
-    glowColor: number,
-  ): void {
-    // Каменная база — тёмный серый, чтобы цветная жила контрастировала
+  private drawFerriteOre(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     ctx.fillStyle = '#2d2d2d';
     ctx.fillRect(0, 0, w, h);
-
-    const glowHex = `#${glowColor.toString(16).padStart(6, '0')}`;
-
-    // Яркие жилы руды
-    ctx.fillStyle = glowHex;
+    // Яркие оранжевые жилы
+    ctx.fillStyle = '#ff6600';
     ctx.beginPath();
     ctx.arc(w * 0.25, h * 0.3, 8, 0, Math.PI * 2);
     ctx.arc(w * 0.75, h * 0.7, 10, 0, Math.PI * 2);
     ctx.arc(w * 0.5, h * 0.25, 7, 0, Math.PI * 2);
     ctx.arc(w * 0.8, h * 0.4, 6, 0, Math.PI * 2);
     ctx.fill();
-
-    // Внешнее свечение жилы
-    ctx.fillStyle = glowHex + '40';
+    // Внешнее свечение
+    ctx.fillStyle = '#ff660040';
     ctx.beginPath();
     ctx.arc(w * 0.25, h * 0.3, 12, 0, Math.PI * 2);
     ctx.arc(w * 0.75, h * 0.7, 14, 0, Math.PI * 2);
     ctx.fill();
-
-    // Границы камня
+    // Границы
     ctx.strokeStyle = '#1a1a1a';
     ctx.lineWidth = 2;
     ctx.strokeRect(2, 2, w - 4, h - 4);
-
-    // Блик по краю
     ctx.strokeStyle = 'rgba(255,255,255,0.2)';
     ctx.lineWidth = 1;
     ctx.strokeRect(0, 0, w, h);
   }
 
-  /** Кирпичная стена. */
+  private drawResonitOre(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    ctx.fillStyle = '#2d2d2d';
+    ctx.fillRect(0, 0, w, h);
+    // Яркие фиолетовые жилы
+    ctx.fillStyle = '#aa00ff';
+    ctx.beginPath();
+    ctx.arc(w * 0.3, h * 0.3, 8, 0, Math.PI * 2);
+    ctx.arc(w * 0.7, h * 0.7, 10, 0, Math.PI * 2);
+    ctx.arc(w * 0.5, h * 0.25, 7, 0, Math.PI * 2);
+    ctx.arc(w * 0.85, h * 0.45, 6, 0, Math.PI * 2);
+    ctx.fill();
+    // Внешнее свечение
+    ctx.fillStyle = '#aa00ff40';
+    ctx.beginPath();
+    ctx.arc(w * 0.3, h * 0.3, 12, 0, Math.PI * 2);
+    ctx.arc(w * 0.7, h * 0.7, 14, 0, Math.PI * 2);
+    ctx.fill();
+    // Границы
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(2, 2, w - 4, h - 4);
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, 0, w, h);
+  }
+
   private drawStoneWall(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     ctx.fillStyle = '#757575';
     ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = '#424242';
     ctx.lineWidth = 2;
-    // Кирпичный узор
     for (let y = 0; y < h; y += 16) {
       const offset = (y / 16) % 2 === 0 ? 0 : 16;
       for (let x = -16 + offset; x < w; x += 32) {
         ctx.strokeRect(x, y, 30, 14);
       }
     }
+    // Техно-швы
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1;
+    for (let y = 0; y < h; y += 32) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
   }
 
-  /** Гравитационный якорь — техно-блок с ядром. */
+  /* ── Устройства ──────────────────────────────────────────────── */
+
   private drawGravityAnchor(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     ctx.fillStyle = '#37474f';
     ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = '#4cc9f0';
+    ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 3;
     ctx.strokeRect(4, 4, w - 8, h - 8);
-    // Ядро
-    ctx.fillStyle = '#4cc9f0';
+    // Ядро — пульсирующее
+    ctx.fillStyle = '#38bdf8';
     ctx.beginPath();
     ctx.arc(w / 2, h / 2, 10, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = 'rgba(76, 201, 240, 0.4)';
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
     ctx.beginPath();
     ctx.arc(w / 2, h / 2, 16, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  /** Энергетический купол — сфера с энергией. */
   private drawEnergyDome(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     ctx.fillStyle = '#263238';
     ctx.fillRect(0, 0, w, h);
@@ -348,17 +548,18 @@ export class RenderService {
     ctx.beginPath();
     ctx.arc(w / 2, h / 2, h / 2 - 4, 0, Math.PI * 2);
     ctx.stroke();
-    // Внутренняя энергия
     ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
     ctx.beginPath();
     ctx.arc(w / 2, h / 2, h / 2 - 8, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  /** Мирный сборщик — жук с зелёно-голубым панцирем. */
-  private drawScavenger(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+  /* ── Существа ────────────────────────────────────────────────── */
+
+  private drawScavenger(ctx: CanvasRenderingContext2D, w: number, h: number, frame: number): void {
     const cx = w / 2;
     const cy = h / 2;
+    const legOffset = frame === 0 ? 0 : 3;
     // Тело
     ctx.fillStyle = '#059669';
     ctx.beginPath();
@@ -369,14 +570,16 @@ export class RenderService {
     ctx.beginPath();
     ctx.ellipse(cx, cy - 2, 12, 8, 0, 0, Math.PI * 2);
     ctx.fill();
-    // Лапки
+    // Лапки (движение в зависимости от кадра)
     ctx.strokeStyle = '#047857';
     ctx.lineWidth = 2;
     for (let i = 0; i < 4; i++) {
       const angle = (i - 1.5) * 0.4;
+      const legX = cx + Math.cos(angle) * 10;
+      const legY = cy + Math.sin(angle) * 6 + legOffset;
       ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(angle) * 10, cy + Math.sin(angle) * 6);
-      ctx.lineTo(cx + Math.cos(angle) * 18, cy + Math.sin(angle) * 12);
+      ctx.moveTo(legX, legY);
+      ctx.lineTo(cx + Math.cos(angle) * 18, cy + Math.sin(angle) * 12 + legOffset);
       ctx.stroke();
     }
     // Глаза
@@ -387,10 +590,10 @@ export class RenderService {
     ctx.fill();
   }
 
-  /** Хищник — красный/фиолетовый с шипами и светящими глазами. */
-  private drawPredator(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+  private drawPredator(ctx: CanvasRenderingContext2D, w: number, h: number, frame: number): void {
     const cx = w / 2;
     const cy = h / 2;
+    const spikeOffset = frame === 0 ? 0 : 2;
     // Тело
     ctx.fillStyle = '#7f1d1d';
     ctx.beginPath();
@@ -402,12 +605,12 @@ export class RenderService {
       const angle = (i / 6) * Math.PI * 2;
       ctx.beginPath();
       ctx.moveTo(cx + Math.cos(angle) * 8, cy + Math.sin(angle) * 6);
-      ctx.lineTo(cx + Math.cos(angle) * 16, cy + Math.sin(angle) * 14);
+      ctx.lineTo(cx + Math.cos(angle) * 16, cy + Math.sin(angle) * 14 + spikeOffset);
       ctx.lineTo(cx + Math.cos(angle + 0.3) * 10, cy + Math.sin(angle + 0.3) * 8);
       ctx.closePath();
       ctx.fill();
     }
-    // Глаза (светящиеся фиолетовые)
+    // Глаза
     ctx.fillStyle = '#c084fc';
     ctx.beginPath();
     ctx.arc(cx - 6, cy - 4, 3, 0, Math.PI * 2);
@@ -421,84 +624,81 @@ export class RenderService {
     ctx.fill();
   }
 
-  /* ── Фоновые декорации (звёзды и скалы, zIndex = -10) ─────── */
+  /* ── Одиночный цвет (fallback) ───────────────────────────────── */
 
-  private addBackgroundDecorations(container: PIXI.Container, levelWidth: number, screenW: number, screenH: number): void {
-    // 100 звёзд/кристаллов
-    for (let i = 0; i < 100; i++) {
-      const x = Math.random() * levelWidth;
-      const y = Math.random() * screenH;
-      const size = Math.random() * 2 + 0.5;
-      const color = Math.random() > 0.5 ? 0x4cc9f0 : 0xc084fc;
-      const star = new PIXI.Graphics();
-      star.beginFill(color, 0.6);
-      star.drawCircle(0, 0, size);
-      star.endFill();
-      star.x = x;
-      star.y = y;
-      star.zIndex = -10;
-      container.addChild(star);
-    }
-
-    // Силуэты инопланетных скал вдоль уровня
-    for (let x = 0; x < levelWidth; x += 200) {
-      const rockH = 60 + Math.random() * 80;
-      const rock = new PIXI.Graphics();
-      rock.beginFill(0x1e293b);
-      rock.drawPolygon([x, screenH, x + 30, screenH - rockH, x + 60, screenH]);
-      rock.endFill();
-      rock.zIndex = -10;
-      container.addChild(rock);
-    }
+  private drawSolid(ctx: CanvasRenderingContext2D, w: number, h: number, color: number): void {
+    ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+    ctx.fillRect(0, 0, w, h);
   }
 
-  /* ── Явная позиция спрайта ─────────────────────────────────── */
-
-  setSpritePosition(entity: number, x: number, y: number): void {
-    const obj = this.displayObjects.get(entity);
-    if (obj) {
-      obj.x = x;
-      obj.y = y;
-    }
-  }
-
-  /* ── Поверхность планеты (Canvas-спрайт, работает на 100%) ─── */
+  /* ── Поверхность планеты (Canvas-спрайт, 650px высота) ───────── */
 
   /** Рисует слой земли через HTMLCanvasElement -> PIXI.Texture.from(canvas) -> PIXI.Sprite. */
   public drawPlanetSurface(surfaceY: number, worldWidth: number): void {
     if (!this.camera) return;
 
+    const tileW = 512;
+    const tileH = 650;
     const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 256;
+    canvas.width = tileW;
+    canvas.height = tileH;
     const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, 512, 256);
+    ctx.clearRect(0, 0, tileW, tileH);
 
-    // Верхний слой — неоново-бирюзовый мох (высотой 14px прямо по линии surfaceY)
+    // Верхний слой — светящийся биолюминесцентный покров (мех/ кора)
     ctx.fillStyle = '#2dd4bf';
-    ctx.fillRect(0, 0, 512, 8);
+    ctx.fillRect(0, 0, tileW, 8);
     ctx.fillStyle = '#10b981';
-    ctx.fillRect(0, 8, 512, 6);
+    ctx.fillRect(0, 8, tileW, 6);
+    ctx.fillStyle = '#06b6d4';
+    ctx.fillRect(0, 14, tileW, 4);
 
-    // Каменная порода под мхом
+    // Глубокий срез коры планеты — пласты породы
     ctx.fillStyle = '#334155';
-    ctx.fillRect(0, 14, 512, 242);
+    ctx.fillRect(0, 18, tileW, 200);
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 218, tileW, 200);
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 418, tileW, tileH - 418);
+
+    // Подземные трещины
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < tileW; i += 40) {
+      ctx.beginPath();
+      ctx.moveTo(i, 218);
+      ctx.lineTo(i + 15, tileH);
+      ctx.stroke();
+    }
 
     // Камни внутри породы
     ctx.fillStyle = '#475569';
     for (let i = 0; i < 8; i++) {
       const rx = i * 64 + (i % 3 === 0 ? 8 : i % 3 === 1 ? 24 : 40);
-      const ry = 30 + (i % 2 === 0 ? 0 : 15);
+      const ry = 40 + (i % 2 === 0 ? 0 : 15);
       ctx.fillRect(rx, ry, 14, 10);
     }
+    for (let i = 0; i < 6; i++) {
+      const rx = i * 80 + 20;
+      const ry = 250 + (i % 2 === 0 ? 0 : 20);
+      ctx.fillRect(rx, ry, 12, 8);
+    }
 
-    // Фиолетовые кристаллы
+    // Светящиеся жилы кристаллов
     ctx.fillStyle = '#a855f7';
     for (let i = 0; i < 4; i++) {
       const cx = i * 128 + 40;
-      const cy = 100 + (i % 2 === 0 ? 20 : 0);
+      const cy = 320 + (i % 2 === 0 ? 30 : 0);
       ctx.beginPath();
       ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#38bdf8';
+    for (let i = 0; i < 4; i++) {
+      const cx = i * 128 + 80;
+      const cy = 420 + (i % 2 === 0 ? 20 : 0);
+      ctx.beginPath();
+      ctx.arc(cx, cy, 4, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -511,6 +711,64 @@ export class RenderService {
       sprite.zIndex = -1;
       sprite.anchor.set(0, 0);
       this.camera.addChild(sprite);
+    }
+  }
+
+  /* ── Атмосферный фон планеты (звёзды, кольцо, горы) zIndex=-10 ─ */
+
+  private addAtmosphereBackground(container: PIXI.Container, levelWidth: number, screenW: number, screenH: number): void {
+    // Звёзды в верхней части неба (над горизонтом)
+    for (let i = 0; i < 150; i++) {
+      const x = Math.random() * levelWidth;
+      const y = Math.random() * (screenH * 0.45);
+      const size = Math.random() * 2 + 0.5;
+      const color = Math.random() > 0.5 ? 0x38bdf8 : 0xc084fc;
+      const star = new PIXI.Graphics();
+      star.beginFill(color, 0.7);
+      star.drawCircle(0, 0, size);
+      star.endFill();
+      star.x = x;
+      star.y = y;
+      star.zIndex = -10;
+      container.addChild(star);
+    }
+
+    // Кольцо газового гиганта (большой серок в небе)
+    const ringW = 400;
+    const ringH = 150;
+    const ringCanvas = document.createElement('canvas');
+    ringCanvas.width = ringW;
+    ringCanvas.height = ringH;
+    const rctx = ringCanvas.getContext('2d')!;
+    rctx.clearRect(0, 0, ringW, ringH);
+    const grad = rctx.createRadialGradient(ringW / 2, ringH / 2, 20, ringW / 2, ringH / 2, ringW / 2);
+    grad.addColorStop(0, 'rgba(70, 130, 180, 0.15)');
+    grad.addColorStop(1, 'rgba(70, 130, 180, 0.0)');
+    rctx.fillStyle = grad;
+    rctx.beginPath();
+    rctx.ellipse(ringW / 2, ringH / 2, ringW / 2 - 10, ringH / 2 - 10, 0, 0, Math.PI * 2);
+    rctx.fill();
+    rctx.strokeStyle = 'rgba(70, 130, 180, 0.3)';
+    rctx.lineWidth = 2;
+    rctx.beginPath();
+    rctx.ellipse(ringW / 2, ringH / 2, ringW / 2 - 5, ringH / 2 - 5, 0, 0, Math.PI * 2);
+    rctx.stroke();
+    const ringTex = PIXI.Texture.from(ringCanvas);
+    const ringSprite = new PIXI.Sprite(ringTex);
+    ringSprite.x = levelWidth / 2 - ringW / 2;
+    ringSprite.y = -ringH / 2;
+    ringSprite.zIndex = -10;
+    container.addChild(ringSprite);
+
+    // Силуэты инопланетных скал вдоль уровня (ровно на линии горизонта)
+    for (let x = 0; x < levelWidth; x += 200) {
+      const rockH = 60 + Math.random() * 80;
+      const rock = new PIXI.Graphics();
+      rock.beginFill(0x1e293b);
+      rock.drawPolygon([x, screenH, x + 30, screenH - rockH, x + 60, screenH]);
+      rock.endFill();
+      rock.zIndex = -10;
+      container.addChild(rock);
     }
   }
 
@@ -527,7 +785,7 @@ export class RenderService {
     const ctx = canvas.getContext('2d')!;
     ctx.clearRect(0, 0, size, size);
 
-    // Радиальный градиент: от почти прозрачного в中心 до более заметного у края
+    // Радиальный градиент
     const grad = ctx.createRadialGradient(radius, radius, 0, radius, radius, radius);
     grad.addColorStop(0, 'rgba(56, 189, 248, 0.04)');
     grad.addColorStop(1, 'rgba(56, 189, 248, 0.18)');
@@ -718,3 +976,4 @@ export class RenderService {
     this.textures.clear();
   }
 }
+

@@ -63,22 +63,16 @@ import { Vec2 } from './core/vec2';
 // Текстуры (все кадры анимации предзагружаются)
 // ============================================================================
 const TEX = {
-  // Игрок — базовые (для совместимости)
-  playerIdle: '/textures/player_idle.png',
-  playerWalk: '/textures/player_walk.png',
-  playerJump: '/textures/player_jump.png',
-  // Игрок — кадры анимации (Idle)
+  // Игрок — кадры анимации (Idle, 2 кадра)
   playerIdle0: '/textures/player_idle_0.png',
   playerIdle1: '/textures/player_idle_1.png',
-  playerIdle2: '/textures/player_idle_2.png',
-  playerIdle3: '/textures/player_idle_3.png',
-  // Игрок — кадры анимации (Walk)
-  playerWalk0: '/textures/player_walk_0.png',
-  playerWalk1: '/textures/player_walk_1.png',
-  playerWalk2: '/textures/player_walk_2.png',
-  playerWalk3: '/textures/player_walk_3.png',
-  playerWalk4: '/textures/player_walk_4.png',
-  playerWalk5: '/textures/player_walk_5.png',
+  // Игрок — кадры анимации (Run, 3 кадра)
+  playerRun0: '/textures/player_run_0.png',
+  playerRun1: '/textures/player_run_1.png',
+  playerRun2: '/textures/player_run_2.png',
+  // Игрок — прыжок и добыча
+  playerJump: '/textures/player_jump.png',
+  playerMine: '/textures/player_mine.png',
   // Блоки мира
   blockDirt: '/textures/block_dirt.png',
   blockStone: '/textures/block_stone.png',
@@ -96,9 +90,11 @@ const TEX = {
   gravityAnchor: '/textures/gravity_anchor.png',
   gravityZone: '/textures/gravity_zone.png',
   energyDome: '/textures/energy_dome.png',
-  // Существа
+  // Существа (по 2 кадра движения)
   creature_scavenger: '/textures/creature_scavenger.png',
+  creature_scavenger_1: '/textures/creature_scavenger.png',
   creature_predator: '/textures/creature_predator.png',
+  creature_predator_1: '/textures/creature_predator.png',
   // UI
   bgSpace: '/textures/bg_space.png',
   uiSlot: '/textures/ui_slot.png',
@@ -108,25 +104,20 @@ const TEX = {
 const PLAYER_IDLE_FRAMES = [
   TEX.playerIdle0,
   TEX.playerIdle1,
-  TEX.playerIdle2,
-  TEX.playerIdle3,
 ];
 
-const PLAYER_WALK_FRAMES = [
-  TEX.playerWalk0,
-  TEX.playerWalk1,
-  TEX.playerWalk2,
-  TEX.playerWalk3,
-  TEX.playerWalk4,
-  TEX.playerWalk5,
+const PLAYER_RUN_FRAMES = [
+  TEX.playerRun0,
+  TEX.playerRun1,
+  TEX.playerRun2,
 ];
 
 // ============================================================================
-// Конфигурация Гравитационного Прилива (таймер 45+15+60 секунд)
+// Конфигурация Гравитационного Прилива (быстрый цикл для превью)
 // ============================================================================
-TideConfig.stabilityDuration = { min: 45, max: 45 };
-TideConfig.warningDuration = { min: 15, max: 15 };
-TideConfig.catastropheDuration = { min: 60, max: 60 };
+TideConfig.stabilityDuration = { min: 20, max: 25 };
+TideConfig.warningDuration = { min: 6, max: 6 };
+TideConfig.catastropheDuration = { min: 15, max: 15 };
 TideConfig.aftermathDuration = { min: 5, max: 5 };
 
 // ============================================================================
@@ -195,9 +186,9 @@ async function bootstrap(): Promise<void> {
 
   const player = world.createEntity();
   world.addComponent(player, Transform as unknown as symbol, {
-    x: 200, y: GROUND_SURFACE_Y - 60, rotation: 0, scaleX: 1, scaleY: 1,
+    x: 500, y: GROUND_SURFACE_Y - 28, rotation: 0, scaleX: 1, scaleY: 1,
   });
-  const playerBody = physics.createCircleBody(player, 200, GROUND_SURFACE_Y - 60, PLAYER_RADIUS, {
+  const playerBody = physics.createCircleBody(player, 500, GROUND_SURFACE_Y - 28, PLAYER_RADIUS, {
     restitution: 0.1, friction: 0.5, density: 1, label: 'player',
     inertia: Infinity, // космонавт не кувыркается при столкновениях и смене гравитации
   });
@@ -210,7 +201,7 @@ async function bootstrap(): Promise<void> {
     texture: TEX.playerIdle0, tint: 0xffffff, alpha: 1, visible: true, layer: 10,
   });
   // Анимированный спрайт персонажа (Idle кадры) — размер 48x56
-  const playerSprite = render.addSprite(player, TEX.playerIdle0, 10, 48, 56, true, 4, 0.15);
+  const playerSprite = render.addSprite(player, TEX.playerIdle0, 10, 48, 56, true, 2, 0.15);
   world.addComponent(player, Player as unknown as symbol, {
     health: 100, maxHealth: 100, speed: PLAYER_SPEED, jumpForce: PLAYER_JUMP, canDoubleJump: false,
   });
@@ -325,10 +316,10 @@ async function bootstrap(): Promise<void> {
   // ============================================================================
   const anchorEntity = world.createEntity();
   world.addComponent(anchorEntity, Transform as unknown as symbol, {
-    x: 580, y: GROUND_SURFACE_Y - 24, rotation: 0, scaleX: 1, scaleY: 1,
+    x: 620, y: GROUND_SURFACE_Y - 24, rotation: 0, scaleX: 1, scaleY: 1,
   });
   world.addComponent(anchorEntity, PhysicsBody as unknown as symbol, {
-    body: physics.createRectangleBody(anchorEntity, 580, GROUND_SURFACE_Y - 24, 60, 60, {
+    body: physics.createRectangleBody(anchorEntity, 620, GROUND_SURFACE_Y - 24, 60, 60, {
       isStatic: true, label: 'gravity-anchor-spawn',
     }),
     gravityScale: 0, isSleeping: true,
@@ -338,7 +329,7 @@ async function bootstrap(): Promise<void> {
   });
   render.addSprite(anchorEntity, TEX.gravityAnchor, 10, 60, 60);
   // Визуальный купол защиты вокруг якоря
-  render.drawAnchorDome(580, GROUND_SURFACE_Y - 24, 250);
+  render.drawAnchorDome(620, GROUND_SURFACE_Y - 24, 250);
   world.addComponent(anchorEntity, GravityAnchor as unknown as symbol, {
     active: true,
     radius: 250,
@@ -352,118 +343,84 @@ async function bootstrap(): Promise<void> {
   });
 
   // ============================================================================
-  // Парящие каменные острова / потолок пещеры (поймают игрока при инверсии гравитации)
-  // ============================================================================
-  const ceilingY = GROUND_SURFACE_Y - 600;
-  for (let cx = 0; cx < LEVEL_WIDTH; cx += 240) {
-    const ceilingEntity = world.createEntity();
-    const cw = 160 + Math.random() * 80;
-    const ch = 40 + Math.random() * 40;
-    world.addComponent(ceilingEntity, Transform as unknown as symbol, {
-      x: cx + cw / 2, y: ceilingY, rotation: 0, scaleX: 1, scaleY: 1,
-    });
-    world.addComponent(ceilingEntity, PhysicsBody as unknown as symbol, {
-      body: physics.createRectangleBody(ceilingEntity, cx + cw / 2, ceilingY, cw, ch, {
-        isStatic: true, restitution: 0.3, friction: 0.6, label: `ceiling-${cx}`,
-      }),
-      gravityScale: 0, isSleeping: true,
-    });
-    world.addComponent(ceilingEntity, Renderable as unknown as symbol, {
-      texture: TEX.blockStone, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
-    });
-    render.addSprite(ceilingEntity, TEX.blockStone, 5, cw, ch);
-    world.addComponent(ceilingEntity, Material as unknown as symbol, {
-      mass: 0, density: 2000, strength: 10000, durability: 1,
-      sailArea: 0, airResistance: 1, state: 'solid',
-      temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.5,
-    });
-  }
-
-  // ============================================================================
-  // Предзагрузка текстур руды (чтобы блоки рендерились цветными, а не белыми)
+  // Предзагрузка текстур руды и блоков
   // ============================================================================
   await render.loadTexture(TEX.blockFerrite);
   await render.loadTexture(TEX.blockResonit);
   await render.loadTexture(TEX.blockStone);
 
-  // Каменные блоки и руды — равномерно распределены по уровню
-  const blocks: Array<{ x: number; y: number; w: number; h: number; type: TileType; tex: string }> = [];
-  const oreTypes: Array<{ type: TileType; tex: string; weight: number }> = [
-    { type: 'stone' as TileType, tex: TEX.blockStone, weight: 5 },
-    { type: 'stone' as TileType, tex: TEX.blockStone, weight: 5 },
-    { type: 'ferrite_ore' as TileType, tex: TEX.blockFerrite, weight: 2 },
-    { type: 'resonit_ore' as TileType, tex: TEX.blockResonit, weight: 1 },
+  // ============================================================================
+  // Парящие каменные острова над головой игрока (задерживают объекты при инверсии гравитации)
+  // ============================================================================
+  const islandY = GROUND_SURFACE_Y - 210;
+  const islands = [
+    { x: 300, w: 144, h: 44 }, // первый остров x=300..444
+    { x: 660, w: 144, h: 44 }, // второй остров x=660..804
   ];
-
-  // Генерируем блоки каждые ~200px с вариацией высоты
-  // Пропускаем стартовую зону (600..900) — там детерминированные блоки со всеми 3 видами ресурсов
-  for (let bx = 200; bx < LEVEL_WIDTH - 200; bx += 200) {
-    if (bx >= 600 && bx <= 900) continue;
-    const roll = Math.floor(Math.random() * 12);
-    let ore: { type: TileType; tex: string } | null = null;
-    if (roll < 2) ore = oreTypes[2]; // ferrite_ore
-    else if (roll < 3) ore = oreTypes[3]; // resonit_ore
-    else ore = oreTypes[Math.floor(Math.random() * 2)]; // stone
-
-    const offsetY = (Math.random() - 0.5) * 30; // вариация высоты ±15px
-    const y = GROUND_SURFACE_Y - 24 + offsetY; // блоки стоят НА поверхности земли (полувысота 24)
-
-    blocks.push({
-      x: bx + 40 + Math.random() * 120, // вариация по X внутри ячейки
-      y,
-      w: 48, h: 48,
-      type: ore.type,
-      tex: ore.tex,
+  islands.forEach((isl, i) => {
+    const islandEntity = world.createEntity();
+    world.addComponent(islandEntity, Transform as unknown as symbol, {
+      x: isl.x + isl.w / 2, y: islandY, rotation: 0, scaleX: 1, scaleY: 1,
     });
-  }
-
-  // Стартовые блоки у игрока (x = 600..900): все 3 вида ресурсов (ferrite, resonit, stone)
-  const starterBlocks = [
-    { x: 660, type: 'stone' as TileType, tex: TEX.blockStone },
-    { x: 730, type: 'ferrite_ore' as TileType, tex: TEX.blockFerrite },
-    { x: 800, type: 'resonit_ore' as TileType, tex: TEX.blockResonit },
-    { x: 870, type: 'stone' as TileType, tex: TEX.blockStone },
-  ];
-  starterBlocks.forEach((sb) => {
-    blocks.push({
-      x: sb.x,
-      y: GROUND_SURFACE_Y - 24,
-      w: 48, h: 48,
-      type: sb.type,
-      tex: sb.tex,
+    world.addComponent(islandEntity, PhysicsBody as unknown as symbol, {
+      body: physics.createRectangleBody(islandEntity, isl.x + isl.w / 2, islandY, isl.w, isl.h, {
+        isStatic: true, restitution: 0.3, friction: 0.6, label: `island-${i}`,
+      }),
+      gravityScale: 0, isSleeping: true,
+    });
+    world.addComponent(islandEntity, Renderable as unknown as symbol, {
+      texture: TEX.blockStone, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
+    });
+    render.addSprite(islandEntity, TEX.blockStone, 5, isl.w, isl.h);
+    world.addComponent(islandEntity, Material as unknown as symbol, {
+      mass: 0, density: 2000, strength: 10000, durability: 1,
+      sailArea: 0, airResistance: 1, state: 'solid',
+      temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.5,
     });
   });
 
-  blocks.forEach((b, i) => {
+  // ============================================================================
+  // Стартовые блоки ресурсов вокруг игрока (x 200..950)
+  // ============================================================================
+  const startBlocks: Array<{ x: number; type: TileType; tex: string }> = [
+    // Слева от игрока — месторождение феррита и резонита
+    { x: 280, type: 'ferrite_ore' as TileType, tex: TEX.blockFerrite },
+    { x: 328, type: 'resonit_ore' as TileType, tex: TEX.blockResonit },
+    { x: 376, type: 'ferrite_ore' as TileType, tex: TEX.blockFerrite },
+    // Справа за куполом — второе месторождение
+    { x: 750, type: 'stone' as TileType, tex: TEX.blockStone },
+    { x: 798, type: 'ferrite_ore' as TileType, tex: TEX.blockFerrite },
+    { x: 846, type: 'resonit_ore' as TileType, tex: TEX.blockResonit },
+  ];
+  startBlocks.forEach((sb, i) => {
     const entity = world.createEntity();
     world.addComponent(entity, Transform as unknown as symbol, {
-      x: b.x + 24, y: b.y + 24, rotation: 0, scaleX: 1, scaleY: 1,
+      x: sb.x + 24, y: GROUND_SURFACE_Y - 24 + 24, rotation: 0, scaleX: 1, scaleY: 1,
     });
     world.addComponent(entity, PhysicsBody as unknown as symbol, {
-      body: physics.createRectangleBody(entity, b.x + 24, b.y + 24, b.w, b.h, {
-        restitution: 0.3, friction: 0.6, density: 2, label: `block-${i}`,
-        inertia: Infinity, // блоки не заваливаются набок
+      body: physics.createRectangleBody(entity, sb.x + 24, GROUND_SURFACE_Y - 24 + 24, 48, 48, {
+        restitution: 0.3, friction: 0.6, density: 2, label: `start-block-${i}`,
+        inertia: Infinity,
       }),
       gravityScale: 1.0, isSleeping: false,
     });
     world.addComponent(entity, Renderable as unknown as symbol, {
-      texture: b.tex, tint: 0xffffff, alpha: 1, visible: true, layer: 10,
+      texture: sb.tex, tint: 0xffffff, alpha: 1, visible: true, layer: 10,
     });
-    const sprite = render.addSprite(entity, b.tex, 10, b.w, b.h);
+    render.addSprite(entity, sb.tex, 10, 48, 48);
     world.addComponent(entity, Material as unknown as symbol, {
       mass: 20, density: 2000, strength: 8000, durability: 1,
       sailArea: 0.05, airResistance: 0.3, state: 'solid',
       temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.5,
     });
-    // Блок можно добывать — Mineable задаёт прочность и лут
     const dropForType: Record<string, { drop: string; amount: number; health: number }> = {
       stone: { drop: 'stone_slabs', amount: 1, health: 30 },
       ferrite_ore: { drop: 'ferrite_ore', amount: 1, health: 45 },
       resonit_ore: { drop: 'resonit', amount: 1, health: 60 },
     };
-    const drop = dropForType[b.type] ?? dropForType.stone;
+    const drop = dropForType[sb.type] ?? dropForType.stone;
     world.addComponent(entity, Mineable as unknown as symbol, {
-      tileType: b.type,
+      tileType: sb.type,
       hardness: 1,
       health: drop.health,
       maxHealth: drop.health,
@@ -474,45 +431,50 @@ async function bootstrap(): Promise<void> {
   });
 
   // ============================================================================
-  // Существа на уровне (3 сборщика, 2 хищника)
+  // Существа в стартовом кадре (patрулируют поверхность)
   // ============================================================================
-  const creatureTypes: Array<{ tex: string; w: number; h: number }> = [
-    { tex: TEX.creature_scavenger, w: 48, h: 40 },
-    { tex: TEX.creature_predator, w: 52, h: 44 },
-  ];
-  const creatureSpawnX = [600, 1100, 1600]; // сборщики
-  const predatorSpawnX = [900, 1400]; // хищники
-
-  creatureSpawnX.forEach((sx, i) => {
-    const entity = world.createEntity();
-    const cy = GROUND_SURFACE_Y - 20;
-    world.addComponent(entity, Transform as unknown as symbol, { x: sx, y: cy, rotation: 0, scaleX: 1, scaleY: 1 });
-    world.addComponent(entity, PhysicsBody as unknown as symbol, {
-      body: physics.createRectangleBody(entity, sx, cy, 36, 32, {
-        restitution: 0.1, friction: 0.5, density: 1, label: `scavenger-${i}`,
-        inertia: Infinity, // существо не кувыркается
-      }),
-      gravityScale: 1.0, isSleeping: false,
-    });
-    world.addComponent(entity, Renderable as unknown as symbol, { texture: TEX.creature_scavenger, tint: 0xffffff, alpha: 1, visible: true, layer: 10 });
-    render.addSprite(entity, TEX.creature_scavenger, 10, 48, 40);
-    world.addComponent(entity, Material as unknown as symbol, { mass: 5, density: 1000, strength: 2000, durability: 1, sailArea: 0.1, airResistance: 0.4, state: 'solid', temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.0 });
+  // Сборщик слева от игрока
+  const scavengerEntity = world.createEntity();
+  world.addComponent(scavengerEntity, Transform as unknown as symbol, {
+    x: 430, y: GROUND_SURFACE_Y - 24, rotation: 0, scaleX: 1, scaleY: 1,
+  });
+  world.addComponent(scavengerEntity, PhysicsBody as unknown as symbol, {
+    body: physics.createRectangleBody(scavengerEntity, 430, GROUND_SURFACE_Y - 24, 36, 32, {
+      restitution: 0.1, friction: 0.5, density: 1, label: 'scavenger-start',
+      inertia: Infinity,
+    }),
+    gravityScale: 1.0, isSleeping: false,
+  });
+  world.addComponent(scavengerEntity, Renderable as unknown as symbol, {
+    texture: TEX.creature_scavenger, tint: 0xffffff, alpha: 1, visible: true, layer: 10,
+  });
+  render.addSprite(scavengerEntity, TEX.creature_scavenger, 10, 48, 40);
+  world.addComponent(scavengerEntity, Material as unknown as symbol, {
+    mass: 5, density: 1000, strength: 2000, durability: 1,
+    sailArea: 0.1, airResistance: 0.4, state: 'solid', temperature: 20,
+    burnable: false, flammable: false, thermalConductivity: 1.0,
   });
 
-  predatorSpawnX.forEach((px, i) => {
-    const entity = world.createEntity();
-    const cy = GROUND_SURFACE_Y - 22;
-    world.addComponent(entity, Transform as unknown as symbol, { x: px, y: cy, rotation: 0, scaleX: 1, scaleY: 1 });
-    world.addComponent(entity, PhysicsBody as unknown as symbol, {
-      body: physics.createRectangleBody(entity, px, cy, 44, 36, {
-        restitution: 0.1, friction: 0.5, density: 1, label: `predator-${i}`,
-        inertia: Infinity, // хищник не кувыркается
-      }),
-      gravityScale: 1.0, isSleeping: false,
-    });
-    world.addComponent(entity, Renderable as unknown as symbol, { texture: TEX.creature_predator, tint: 0xffffff, alpha: 1, visible: true, layer: 10 });
-    render.addSprite(entity, TEX.creature_predator, 10, 52, 44);
-    world.addComponent(entity, Material as unknown as symbol, { mass: 12, density: 1500, strength: 3000, durability: 1, sailArea: 0.15, airResistance: 0.5, state: 'solid', temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.0 });
+  // Хищник справа от купола
+  const predatorEntity = world.createEntity();
+  world.addComponent(predatorEntity, Transform as unknown as symbol, {
+    x: 880, y: GROUND_SURFACE_Y - 24, rotation: 0, scaleX: 1, scaleY: 1,
+  });
+  world.addComponent(predatorEntity, PhysicsBody as unknown as symbol, {
+    body: physics.createRectangleBody(predatorEntity, 880, GROUND_SURFACE_Y - 24, 44, 36, {
+      restitution: 0.1, friction: 0.5, density: 1, label: 'predator-start',
+      inertia: Infinity,
+    }),
+    gravityScale: 1.0, isSleeping: false,
+  });
+  world.addComponent(predatorEntity, Renderable as unknown as symbol, {
+    texture: TEX.creature_predator, tint: 0xffffff, alpha: 1, visible: true, layer: 10,
+  });
+  render.addSprite(predatorEntity, TEX.creature_predator, 10, 52, 44);
+  world.addComponent(predatorEntity, Material as unknown as symbol, {
+    mass: 12, density: 1500, strength: 3000, durability: 1,
+    sailArea: 0.15, airResistance: 0.5, state: 'solid', temperature: 20,
+    burnable: false, flammable: false, thermalConductivity: 1.0,
   });
 
   // ============================================================================
@@ -523,7 +485,7 @@ async function bootstrap(): Promise<void> {
   inventorySystem.setPlayerEntity(player);
   const miningSystem = new MiningSystem(physics, input, eventBus, inventorySystem, render);
   const playerAnimationSystem = new PlayerAnimationSystem(render);
-  playerAnimationSystem.setPlayerEntity(player, PLAYER_IDLE_FRAMES, PLAYER_WALK_FRAMES, [TEX.playerJump]);
+  playerAnimationSystem.setPlayerEntity(player, PLAYER_IDLE_FRAMES, PLAYER_RUN_FRAMES, [TEX.playerJump]);
   const craftingSystem = new CraftingSystem(eventBus, render);
   craftingSystem.setPlayerEntity(player);
   const buildingSystem = new BuildingSystem(render, eventBus);
@@ -599,6 +561,38 @@ async function bootstrap(): Promise<void> {
             showPickupToast('Смерть: выход за границы карты', 0);
           }
         }
+
+        // ----- Анимация космонавта (IDLE / RUN / JUMP / MINE) -----
+        const ctrl = world.getComponent(player, CharacterController as unknown as symbol) as {
+          state: string; inputDirection: { x: number; y: number };
+        } | undefined;
+        const stats = world.getComponent(player, CharacterStats as unknown as symbol) as {
+          exhausted: boolean;
+        } | undefined;
+        const isAirborne = ctrl?.state === 'Airborne' || ctrl?.state === 'ZeroG';
+        const isMoving = (ctrl?.inputDirection.x ?? 0) !== 0;
+        const isMining = (window as any).__miningActive === true;
+
+        if (isMining) {
+          playerSprite.texture = render.getTexture(TEX.playerMine) ?? playerSprite.texture;
+        } else if (isAirborne) {
+          playerSprite.texture = render.getTexture(TEX.playerJump) ?? playerSprite.texture;
+        } else if (isMoving) {
+          // Циклически переключаем кадры бега
+          const runFrame = Math.floor(Date.now() / 120) % 3;
+          const runTex = [TEX.playerRun0, TEX.playerRun1, TEX.playerRun2][runFrame];
+          playerSprite.texture = render.getTexture(runTex) ?? playerSprite.texture;
+          // Разворот спрайта по направлению движения
+          const dirX = ctrl?.inputDirection.x ?? 0;
+          const dir = dirX > 0 ? 1 : dirX < 0 ? -1 : 1;
+          playerSprite.scale.x = Math.abs(playerSprite.scale.x) * dir;
+        } else {
+          // Циклически переключаем кадры простоя
+          const idleFrame = Math.floor(Date.now() / 400) % 2;
+          const idleTex = [TEX.playerIdle0, TEX.playerIdle1][idleFrame];
+          playerSprite.texture = render.getTexture(idleTex) ?? playerSprite.texture;
+          playerSprite.scale.x = Math.abs(playerSprite.scale.x); // сброс зеркаливания
+        }
       }
       renderSystem.draw(world, alpha);
       render.render();
@@ -626,7 +620,17 @@ async function bootstrap(): Promise<void> {
   input.bindAction('up', 'w');
   input.bindAction('down', 's');
   input.bindAction('jump', ' ');
-  // E — только копирование/добыча (подбор ресурса происходит автоматически при приближении)
+  // E — копирование/добыча ( копание при зажатой E для анимации )
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'e' || e.key === 'E') {
+      (window as any).__miningActive = true;
+    }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'e' || e.key === 'E') {
+      (window as any).__miningActive = false;
+    }
+  });
 
   // Инвентарь по клавишам I или Tab
   function toggleInventory(): void {
@@ -743,6 +747,35 @@ async function bootstrap(): Promise<void> {
   const stPanelEl = document.getElementById('st-panel');
   const tideValEl = document.getElementById('tide-val');
 
+  // ----- Панель ресурсов и статуса купола (HUD) -----
+  const hudStats = document.getElementById('hud-stats');
+  const domePanel = document.createElement('div');
+  domePanel.className = 'stat-panel';
+  domePanel.id = 'dome-panel';
+  domePanel.innerHTML = `
+    <div class="stat-label"><span>Защита купола</span><span class="stat-value" id="dome-val">—</span></div>
+    <div class="stat-bar"><div class="stat-fill" id="dome-bar" style="width:100%"></div></div>
+  `;
+  const resPanel = document.createElement('div');
+  resPanel.className = 'stat-panel';
+  resPanel.id = 'res-panel';
+  resPanel.innerHTML = `
+    <div class="stat-label"><span>Ресурсы</span><span class="stat-value" id="res-val">—</span></div>
+  `;
+  if (hudStats) {
+    hudStats.appendChild(domePanel);
+    hudStats.appendChild(resPanel);
+  }
+  const domeValEl = document.getElementById('dome-val');
+  const domeBarEl = document.getElementById('dome-bar');
+  const resValEl = document.getElementById('res-val');
+
+  // Счётчики ресурсов
+  let resStone = 0;
+  let resFerrite = 0;
+  let resResonit = 0;
+  let selectedBuild = 'stone_wall'; // 1=стена, 2=якорь, 3=купол
+
   const toastEl = document.getElementById('pickup-toast');
   let toastTimeout: number | null = null;
 
@@ -815,14 +848,51 @@ async function bootstrap(): Promise<void> {
     if (tideValEl) {
       tideValEl.style.color = tidePhase === 'stability' ? '#7c93ff' : tidePhase === 'warning' ? '#ff9900' : '#ff3333';
     }
+
+    // ----- Статус купола защиты -----
+    const playerBodyHud = physics.getBody(player);
+    const playerTransformHud = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number } | undefined;
+    let inDome = false;
+    if (playerBodyHud && playerTransformHud) {
+      const anchorEntities = world.query(GravityAnchor as unknown as symbol, Transform as unknown as symbol);
+      for (const { components } of anchorEntities) {
+        const anchorData = components[0] as { active: boolean; radius: number };
+        const anchorTransform = components[1] as { x: number; y: number };
+        if (anchorData.active && anchorTransform) {
+          const dx = playerTransformHud.x - anchorTransform.x;
+          const dy = playerTransformHud.y - anchorTransform.y;
+          if (Math.hypot(dx, dy) <= anchorData.radius) {
+            inDome = true;
+            break;
+          }
+        }
+      }
+    }
+    if (domeValEl) {
+      domeValEl.textContent = inDome ? 'ЗАЩИТА АКТИВНА' : 'ВНЕ КУПОЛА: УГРОЗА ПРИЛИВА';
+      domeValEl.style.color = inDome ? '#38bdf8' : '#f97316';
+    }
+    if (domeBarEl) {
+      domeBarEl.style.background = inDome ? 'linear-gradient(90deg, #38bdf8, #0ea5e9)' : 'linear-gradient(90deg, #f97316, #ea580c)';
+    }
+
+    // ----- Счётчик ресурсов -----
+    if (resValEl) {
+      resValEl.textContent = `Камень: ${resStone} | Феррит: ${resFerrite} | Резонит: ${resResonit} | Постройка [1-3]: ${selectedBuild === 'stone_wall' ? 'Стена' : selectedBuild === 'gravity_anchor' ? 'Якорь' : 'Купол'}`;
+    }
   }
 
   setInterval(updateHUD, 100);
   updateHUD();
 
-  // Слушаем события подбора предмета для тоста
+  // Слушаем события подбора предмета для тоста и счёта ресурсов
   eventBus.on('inventory:item-picked-up', (e: any) => {
     showPickupToast(e.itemId, e.count);
+    const id = e.itemId;
+    const cnt = e.count ?? 1;
+    if (id === 'stone_slabs') resStone += cnt;
+    else if (id === 'ferrite_ore') resFerrite += cnt;
+    else if (id === 'resonit') resResonit += cnt;
   });
 
   // Слушаем события прилива для HUD
