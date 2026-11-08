@@ -144,6 +144,15 @@ export class RenderService {
         this.drawEnergyDome(ctx, size, size);
         break;
 
+      // Существа
+      case 'creature_scavenger':
+        this.drawScavenger(ctx, size, size);
+        break;
+
+      case 'creature_predator':
+        this.drawPredator(ctx, size, size);
+        break;
+
       default:
         this.drawSolid(ctx, size, size, RenderService.PLACEHOLDER_COLORS[name] ?? 0x808080);
     }
@@ -425,6 +434,16 @@ export class RenderService {
       rock.endFill();
       rock.zIndex = -10;
       container.addChild(rock);
+    }
+  }
+
+  /* ── Явная позиция спрайта ─────────────────────────────────── */
+
+  setSpritePosition(entity: number, x: number, y: number): void {
+    const obj = this.displayObjects.get(entity);
+    if (obj) {
+      obj.x = x;
+      obj.y = y;
     }
   }
 

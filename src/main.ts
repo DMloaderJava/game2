@@ -184,9 +184,20 @@ async function bootstrap(): Promise<void> {
   const PLAYER_SPEED = 220;
   const PLAYER_JUMP = -750;
 
+  // Поверхность земли должна быть объявлена до использования при спавне игрока
+  const GROUND_Y = 500;
+  const GROUND_HEIGHT = 64;
+  const GROUND_SURFACE_Y = GROUND_Y + GROUND_HEIGHT / 2 - (GROUND_HEIGHT * 4) / 2; // ~400
+
   const player = world.createEntity();
   world.addComponent(player, Transform as unknown as symbol, {
-    x: 200, y: 400, rotation: 0, scaleX: 1, scaleY: 1,
+    x: 200, y: GROUND_SURFACE_Y - 60, rotation: 0, scaleX: 1, scaleY: 1,
+  });
+  world.addComponent(player, PhysicsBody as unknown as symbol, {
+    body: physics.createCircleBody(player, 200, GROUND_SURFACE_Y - 60, PLAYER_RADIUS, {
+      restitution: 0.1, friction: 0.5, density: 1, label: 'player',
+    }),
+    gravityScale: 1.0, isSleeping: false,
   });
   world.addComponent(player, PhysicsBody as unknown as symbol, {
     body: physics.createCircleBody(player, 200, 400, PLAYER_RADIUS, {
@@ -244,8 +255,6 @@ async function bootstrap(): Promise<void> {
 // 4. Уровень: широкий мир 3000px со стенами, рельефом и залежами руды
 // ============================================================================
   const LEVEL_WIDTH = 3000;
-  const GROUND_Y = 500;
-  const GROUND_HEIGHT = 64;
   const WALL_THICKNESS = 80;
 
   // Левая граница мира (стена)
@@ -295,29 +304,31 @@ async function bootstrap(): Promise<void> {
   // Земля — сплошная платформа на всю ширину уровня
   const groundEntity = world.createEntity();
   world.addComponent(groundEntity, Transform as unknown as symbol, {
-    x: LEVEL_WIDTH / 2, y: GROUND_Y + GROUND_HEIGHT / 2,
+    x: LEVEL_WIDTH / 2, y: GROUND_SURFACE_Y + 150,
     rotation: 0, scaleX: 1, scaleY: 1,
   });
   world.addComponent(groundEntity, PhysicsBody as unknown as symbol, {
-    body: physics.createRectangleBody(groundEntity, LEVEL_WIDTH / 2, GROUND_Y + GROUND_HEIGHT / 2, LEVEL_WIDTH, GROUND_HEIGHT * 4, {
+    body: physics.createRectangleBody(groundEntity, LEVEL_WIDTH / 2, GROUND_SURFACE_Y + 150, LEVEL_WIDTH, GROUND_HEIGHT * 4, {
       isStatic: true, label: 'ground',
     }),
     gravityScale: 0, isSleeping: true,
   });
   // Отрисовываем землю рядом тайлов 64x64 вдоль всей поверхности (2 слоя вглубь)
-  const groundTopY = GROUND_Y - GROUND_HEIGHT * 2; // верхняя поверхность земли
+  const groundTileY = GROUND_SURFACE_Y + 32; // центр тайла, верхний край на поверхности
   for (let gx = 0; gx < LEVEL_WIDTH; gx += 64) {
     const tileEntity = world.createEntity();
     world.addComponent(tileEntity, Transform as unknown as symbol, {
-      x: gx + 32, y: groundTopY + 32, rotation: 0, scaleX: 1, scaleY: 1,
+      x: gx + 32, y: groundTileY, rotation: 0, scaleX: 1, scaleY: 1,
     });
     world.addComponent(tileEntity, Renderable as unknown as symbol, {
       texture: TEX.blockDirt, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
     });
     render.addSprite(tileEntity, TEX.blockDirt, 5, 64, 64);
+    // Явно задаём позицию спрайта (защита от статических тел без движения)
+    render.setSpritePosition(tileEntity, gx + 32, groundTileY);
     // Статическое тело для каждого тайла (땅 не должна падать или улетать)
     world.addComponent(tileEntity, PhysicsBody as unknown as symbol, {
-      body: physics.createRectangleBody(tileEntity, gx + 32, groundTopY + 32, 64, 64, {
+      body: physics.createRectangleBody(tileEntity, gx + 32, groundTileY, 64, 64, {
         isStatic: true, label: `ground-tile-${gx}`,
       }),
       gravityScale: 0, isSleeping: true,
@@ -352,7 +363,7 @@ async function bootstrap(): Promise<void> {
     else ore = oreTypes[Math.floor(Math.random() * 2)]; // stone
 
     const offsetY = (Math.random() - 0.5) * 30; // вариация высоты ±15px
-    const y = groundTopY - 32 + offsetY; // блоки стоят НА поверхности земли
+    const y = GROUND_SURFACE_Y - 32 + offsetY; // блоки стоят НА поверхности земли
 
     blocks.push({
       x: bx + 40 + Math.random() * 120, // вариация по X внутри ячейки
@@ -413,7 +424,7 @@ async function bootstrap(): Promise<void> {
 
   creatureSpawnX.forEach((sx, i) => {
     const entity = world.createEntity();
-    const cy = groundTopY - 20;
+    const cy = GROUND_SURFACE_Y - 20;
     world.addComponent(entity, Transform as unknown as symbol, { x: sx, y: cy, rotation: 0, scaleX: 1, scaleY: 1 });
     world.addComponent(entity, PhysicsBody as unknown as symbol, {
       body: physics.createRectangleBody(entity, sx, cy, 36, 32, {
@@ -428,7 +439,7 @@ async function bootstrap(): Promise<void> {
 
   predatorSpawnX.forEach((px, i) => {
     const entity = world.createEntity();
-    const cy = groundTopY - 22;
+    const cy = GROUND_SURFACE_Y - 22;
     world.addComponent(entity, Transform as unknown as symbol, { x: px, y: cy, rotation: 0, scaleX: 1, scaleY: 1 });
     world.addComponent(entity, PhysicsBody as unknown as symbol, {
       body: physics.createRectangleBody(entity, px, cy, 44, 36, {
@@ -495,7 +506,7 @@ async function bootstrap(): Promise<void> {
           if (playerTransform.y > 2000 || playerTransform.y < -1500) {
             // Смерть игрока — респавн над поверхностью земли
             const spawnX = 500;
-            const spawnY = GROUND_Y - GROUND_HEIGHT * 2 - 60; // над толстым полом
+            const spawnY = GROUND_SURFACE_Y - 60; // над поверхностью земли
             playerTransform.x = spawnX;
             playerTransform.y = spawnY;
             if (playerTransform.rotation !== undefined) {
