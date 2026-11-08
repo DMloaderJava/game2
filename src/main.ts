@@ -55,7 +55,7 @@ import { PlayerAnimationSystem } from './systems/player-animation-system';
 import { CraftingSystem } from './systems/crafting-system';
 import { BuildingSystem } from './systems/building-system';
 import { GravityTideSystem } from './systems/gravity-tide-system';
-import { TideConfig } from './components/event-state';
+import { TideConfig, TideState } from './components/event-state';
 
 import { Vec2 } from './core/vec2';
 
@@ -302,14 +302,14 @@ async function bootstrap(): Promise<void> {
     temperature: 20, burnable: false, flammable: false, thermalConductivity: 2.0,
   });
 
-  // Земля — сплошная платформа на всю ширину уровня
+  // Земля — сплошная платформа на всю ширину уровня, выровнена по GROUND_SURFACE_Y
   const groundEntity = world.createEntity();
   world.addComponent(groundEntity, Transform as unknown as symbol, {
-    x: LEVEL_WIDTH / 2, y: GROUND_SURFACE_Y + 150,
+    x: 1500, y: GROUND_SURFACE_Y + 128,
     rotation: 0, scaleX: 1, scaleY: 1,
   });
   world.addComponent(groundEntity, PhysicsBody as unknown as symbol, {
-    body: physics.createRectangleBody(groundEntity, LEVEL_WIDTH / 2, GROUND_SURFACE_Y + 150, LEVEL_WIDTH, GROUND_HEIGHT * 4, {
+    body: physics.createRectangleBody(groundEntity, 1500, GROUND_SURFACE_Y + 128, 6000, 256, {
       isStatic: true, label: 'ground',
     }),
     gravityScale: 0, isSleeping: true,
@@ -325,10 +325,10 @@ async function bootstrap(): Promise<void> {
   // ============================================================================
   const anchorEntity = world.createEntity();
   world.addComponent(anchorEntity, Transform as unknown as symbol, {
-    x: 500, y: GROUND_SURFACE_Y - 32, rotation: 0, scaleX: 1, scaleY: 1,
+    x: 580, y: GROUND_SURFACE_Y - 24, rotation: 0, scaleX: 1, scaleY: 1,
   });
   world.addComponent(anchorEntity, PhysicsBody as unknown as symbol, {
-    body: physics.createRectangleBody(anchorEntity, 500, GROUND_SURFACE_Y - 32, 60, 60, {
+    body: physics.createRectangleBody(anchorEntity, 580, GROUND_SURFACE_Y - 24, 60, 60, {
       isStatic: true, label: 'gravity-anchor-spawn',
     }),
     gravityScale: 0, isSleeping: true,
@@ -337,6 +337,8 @@ async function bootstrap(): Promise<void> {
     texture: TEX.gravityAnchor, tint: 0x4cc9f0, alpha: 1, visible: true, layer: 10,
   });
   render.addSprite(anchorEntity, TEX.gravityAnchor, 10, 60, 60);
+  // Визуальный купол защиты вокруг якоря
+  render.drawAnchorDome(580, GROUND_SURFACE_Y - 24, 250);
   world.addComponent(anchorEntity, GravityAnchor as unknown as symbol, {
     active: true,
     radius: 250,
@@ -404,12 +406,12 @@ async function bootstrap(): Promise<void> {
     else ore = oreTypes[Math.floor(Math.random() * 2)]; // stone
 
     const offsetY = (Math.random() - 0.5) * 30; // вариация высоты ±15px
-    const y = GROUND_SURFACE_Y - 32 + offsetY; // блоки стоят НА поверхности земли
+    const y = GROUND_SURFACE_Y - 24 + offsetY; // блоки стоят НА поверхности земли (полувысота 24)
 
     blocks.push({
       x: bx + 40 + Math.random() * 120, // вариация по X внутри ячейки
       y,
-      w: 64, h: 64,
+      w: 48, h: 48,
       type: ore.type,
       tex: ore.tex,
     });
@@ -425,8 +427,8 @@ async function bootstrap(): Promise<void> {
   starterBlocks.forEach((sb) => {
     blocks.push({
       x: sb.x,
-      y: GROUND_SURFACE_Y - 32,
-      w: 64, h: 64,
+      y: GROUND_SURFACE_Y - 24,
+      w: 48, h: 48,
       type: sb.type,
       tex: sb.tex,
     });
@@ -435,11 +437,12 @@ async function bootstrap(): Promise<void> {
   blocks.forEach((b, i) => {
     const entity = world.createEntity();
     world.addComponent(entity, Transform as unknown as symbol, {
-      x: b.x + b.w / 2, y: b.y + b.h / 2, rotation: 0, scaleX: 1, scaleY: 1,
+      x: b.x + 24, y: b.y + 24, rotation: 0, scaleX: 1, scaleY: 1,
     });
     world.addComponent(entity, PhysicsBody as unknown as symbol, {
-      body: physics.createRectangleBody(entity, b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, {
+      body: physics.createRectangleBody(entity, b.x + 24, b.y + 24, b.w, b.h, {
         restitution: 0.3, friction: 0.6, density: 2, label: `block-${i}`,
+        inertia: Infinity, // блоки не заваливаются набок
       }),
       gravityScale: 1.0, isSleeping: false,
     });
@@ -557,6 +560,12 @@ async function bootstrap(): Promise<void> {
       const playerBody = physics.getBody(player);
       if (playerBody) {
         render.follow(playerBody.position.x, playerBody.position.y, 0.12);
+        // Жёсткая синхронизация Transform игрока с телом Matter.js
+        const playerTransform = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number; rotation?: number } | undefined;
+        if (playerTransform) {
+          playerTransform.x = playerBody.position.x;
+          playerTransform.y = playerBody.position.y;
+        }
         // Запрет вращения космонавта — всегда стоит вертикально
         Matter.Body.setAngle(playerBody, 0);
         Matter.Body.setAngularVelocity(playerBody, 0);
@@ -564,7 +573,6 @@ async function bootstrap(): Promise<void> {
         buildingSystem.setCameraPosition(camPos.x, camPos.y);
 
         // Killzone: смерть при вылете за границы карты
-        const playerTransform = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number; rotation?: number } | undefined;
         if (playerTransform) {
           if (playerTransform.y > 2000 || playerTransform.y < -1500) {
             // Смерть игрока — респавн над поверхностью земли
@@ -784,7 +792,7 @@ async function bootstrap(): Promise<void> {
         if (stBarEl) stBarEl.className = 'stat-fill' + (stats.exhausted ? ' danger' : stPct < 25 ? ' warn' : '');
       }
     }
-    // Фаза прилива
+    // Фаза прилива с таймером в секундах
     const tidePhase = tideSystem.getCurrentPhase();
     const tidePhaseNames: Record<string, string> = {
       stability: 'Стабильность',
@@ -792,7 +800,18 @@ async function bootstrap(): Promise<void> {
       catastrophe: 'КАТАСТРОФА — ГРАВИТАЦИЯ ИНВЕРСИЯ',
       aftermath: 'Последствия',
     };
-    if (tideValEl) tideValEl.textContent = tidePhaseNames[tidePhase] || tidePhase;
+    // Время до конца фазы
+    const tideEntities = world.query(TideState as unknown as symbol);
+    let timeRemainingSec = 0;
+    if (tideEntities.length > 0) {
+      const tideData = tideEntities[0].components[0] as {
+        phaseTimer: number;
+        phaseDuration: number;
+      };
+      timeRemainingSec = Math.ceil(tideData.phaseDuration - tideData.phaseTimer);
+    }
+    const tideLabel = tidePhaseNames[tidePhase] || tidePhase;
+    if (tideValEl) tideValEl.textContent = `${tideLabel} (${timeRemainingSec}с)`;
     if (tideValEl) {
       tideValEl.style.color = tidePhase === 'stability' ? '#7c93ff' : tidePhase === 'warning' ? '#ff9900' : '#ff3333';
     }

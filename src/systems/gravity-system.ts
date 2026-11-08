@@ -11,6 +11,7 @@ import {
   GravityForce,
 } from '../components/gravity';
 import { Material } from '../components/material';
+import { GravityAnchor } from '../components/construction';
 
 /**
  * GravitySystem — контроллер гравитации.
@@ -150,6 +151,22 @@ export class GravitySystem extends System {
   }
 
   computeEffectiveGravity(entity: number, pos: Vec2): Vec2 {
+    // Защита Гравитационного якоря: если сущность в радиусе активного якоря,
+    // гравитация всегда направлена вниз (нормальная), даже в фазе катастрофы.
+    const anchors = this.worldRef.query(GravityAnchor, Transform);
+    for (const { components } of anchors) {
+      const anchorData = components[0] as { active: boolean; radius: number };
+      const anchorTransform = components[1] as { x: number; y: number };
+      if (anchorData.active && anchorTransform) {
+        const dx = pos.x - anchorTransform.x;
+        const dy = pos.y - anchorTransform.y;
+        if (Math.hypot(dx, dy) <= anchorData.radius) {
+          // Внутри зоны защиты якоря — нормальная гравитация вниз
+          return new Vec2(0, 9.81 * 60);
+        }
+      }
+    }
+
     let base = Vec2.zero();
 
     if (this.global?.active) {

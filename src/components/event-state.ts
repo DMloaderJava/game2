@@ -26,10 +26,10 @@ export interface TideStateData {
  * Конфигурация цикла прилива (баланс).
  */
 export const TideConfig = {
-  stabilityDuration: { min: 300, max: 900 },      // 5–15 мин
-  warningDuration: { min: 60, max: 90 },          // 60–90 сек
-  catastropheDuration: { min: 20, max: 20 },      // 20 сек (было 2–3 мин)
-  aftermathDuration: { min: 60, max: 120 },       // 1–2 мин
+  stabilityDuration: { min: 20, max: 25 },        // 20–25 сек
+  warningDuration: { min: 6, max: 6 },            // 6 сек
+  catastropheDuration: { min: 15, max: 15 },      // 15 сек
+  aftermathDuration: { min: 5, max: 5 },          // 5 сек
   gravityChangeDamagePerSecond: 0.4,              // урон целостности в сек без защиты
   anomalySpawnChance: 0.3,                        // шанс спавна аномалии за прилив
 };

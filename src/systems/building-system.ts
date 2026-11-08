@@ -361,7 +361,7 @@ export class BuildingSystem extends System {
       this.worldRef.addComponent(entity, Mineable as unknown as symbol, item.mineable);
     }
 
-    // Гравитационный якорь — добавляем компонент с радиусом защиты
+    // Гравитационный якорь — добавляем компонент с радиусом защиты и визуальный купол
     if (item.itemId === 'gravity_anchor') {
       this.worldRef.addComponent(entity, GravityAnchor as unknown as symbol, {
         active: true,
@@ -369,6 +369,7 @@ export class BuildingSystem extends System {
         energyPerSecond: 0,
         anchoredEntities: [],
       });
+      this.render.drawAnchorDome(this.ghostX, this.ghostY, 250);
     }
 
     // Энергетический купол — добавляем компонент с радиусом защиты

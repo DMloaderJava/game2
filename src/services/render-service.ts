@@ -504,7 +504,7 @@ export class RenderService {
 
     const groundTex = PIXI.Texture.from(canvas);
 
-    for (let x = -256; x <= worldWidth + 256; x += 512) {
+    for (let x = -1024; x <= worldWidth + 1024; x += 512) {
       const sprite = new PIXI.Sprite(groundTex);
       sprite.x = x;
       sprite.y = surfaceY;
@@ -512,6 +512,46 @@ export class RenderService {
       sprite.anchor.set(0, 0);
       this.camera.addChild(sprite);
     }
+  }
+
+  /* ── Защитный купол вокруг Гравитационного якоря ─────────── */
+
+  /** Рисует визуальный купол защиты вокруг якоря (градиентный круг с пунктирной обводкой). */
+  public drawAnchorDome(x: number, y: number, radius: number = 250): PIXI.Sprite {
+    if (!this.camera) return null as any;
+
+    const size = radius * 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, size, size);
+
+    // Радиальный градиент: от почти прозрачного в中心 до более заметного у края
+    const grad = ctx.createRadialGradient(radius, radius, 0, radius, radius, radius);
+    grad.addColorStop(0, 'rgba(56, 189, 248, 0.04)');
+    grad.addColorStop(1, 'rgba(56, 189, 248, 0.18)');
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(radius, radius, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Пунктирная обводка
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 6]);
+    ctx.beginPath();
+    ctx.arc(radius, radius, radius - 2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const sprite = new PIXI.Sprite(PIXI.Texture.from(canvas));
+    sprite.anchor.set(0.5, 0.5);
+    sprite.position.set(x, y);
+    sprite.zIndex = -0.5;
+    this.camera.addChild(sprite);
+    return sprite;
   }
 
   /* ── Публичное API ─────────────────────────────────────────── */
