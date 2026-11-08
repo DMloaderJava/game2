@@ -447,6 +447,64 @@ export class RenderService {
     }
   }
 
+  /* ── Поверхность планеты (可见мая земля под ногами) ─────────── */
+
+  /** Рисует слой земли сплошной полосой через PIXI.Graphics (без ECS-сущностей). */
+  public drawPlanetSurface(surfaceY: number, worldWidth: number): void {
+    if (!this.camera) return;
+
+    const groundGfx = new PIXI.Graphics();
+    groundGfx.zIndex = -2;
+    this.camera.addChild(groundGfx);
+
+    // 1. Основная толща грунта — от surfaceY вниз на 500px
+    groundGfx.beginFill(0x1e293b);
+    groundGfx.drawRect(-500, surfaceY, worldWidth + 1000, 500);
+    groundGfx.endFill();
+
+    // 2. Тёмный подземный слой
+    groundGfx.beginFill(0x0f172a);
+    groundGfx.drawRect(-500, surfaceY + 80, worldWidth + 1000, 420);
+    groundGfx.endFill();
+
+    // 3. Тайловая сетка 64x64 + детали породы + светящиеся вкрапления
+    for (let x = -400; x < worldWidth + 400; x += 64) {
+      // Вертикальные швы тайлов
+      groundGfx.beginFill(0x334155, 0.35);
+      groundGfx.drawRect(x, surfaceY, 2, 500);
+      groundGfx.endFill();
+
+      // Детали породы внутри тайла
+      groundGfx.beginFill(0x334155, 0.45);
+      groundGfx.drawRect(x + 8, surfaceY + 40, 16, 6);
+      groundGfx.drawRect(x + 40, surfaceY + 100, 10, 4);
+      groundGfx.endFill();
+
+      groundGfx.beginFill(0x475569, 0.5);
+      groundGfx.drawCircle(x + 20, surfaceY + 180, 4);
+      groundGfx.drawCircle(x + 50, surfaceY + 220, 3);
+      groundGfx.endFill();
+
+      // Светящиеся подземные вкрапления
+      groundGfx.beginFill(0x06b6d4, 0.6);
+      groundGfx.drawCircle(x + 12, surfaceY + 320, 2);
+      groundGfx.endFill();
+
+      groundGfx.beginFill(0x8b5cf6, 0.5);
+      groundGfx.drawCircle(x + 48, surfaceY + 400, 2);
+      groundGfx.endFill();
+    }
+
+    // 4. Неоновый слой инопланетного мха/коры по самому верху (под ногами)
+    groundGfx.beginFill(0x0d9488);
+    groundGfx.drawRect(-500, surfaceY, worldWidth + 1000, 8);
+    groundGfx.endFill();
+
+    groundGfx.beginFill(0x2dd4bf);
+    groundGfx.drawRect(-500, surfaceY, worldWidth + 1000, 3);
+    groundGfx.endFill();
+  }
+
   /* ── Публичное API ─────────────────────────────────────────── */
 
   /** Загрузить текстуру по URL (кешируется). PixiJS v8: Texture.from(url) не подгружает

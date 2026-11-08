@@ -189,6 +189,9 @@ async function bootstrap(): Promise<void> {
   const GROUND_HEIGHT = 64;
   const GROUND_SURFACE_Y = GROUND_Y + GROUND_HEIGHT / 2 - (GROUND_HEIGHT * 4) / 2; // ~400
 
+  // Железобетонная отрисовка земли через PIXI.Graphics (видимая под ногами)
+  render.drawPlanetSurface(GROUND_SURFACE_Y, 3000);
+
   const player = world.createEntity();
   world.addComponent(player, Transform as unknown as symbol, {
     x: 200, y: GROUND_SURFACE_Y - 60, rotation: 0, scaleX: 1, scaleY: 1,
@@ -313,32 +316,6 @@ async function bootstrap(): Promise<void> {
     }),
     gravityScale: 0, isSleeping: true,
   });
-  // Отрисовываем землю рядом тайлов 64x64 вдоль всей поверхности (2 слоя вглубь)
-  const groundTileY = GROUND_SURFACE_Y + 32; // центр тайла, верхний край на поверхности
-  for (let gx = 0; gx < LEVEL_WIDTH; gx += 64) {
-    const tileEntity = world.createEntity();
-    world.addComponent(tileEntity, Transform as unknown as symbol, {
-      x: gx + 32, y: groundTileY, rotation: 0, scaleX: 1, scaleY: 1,
-    });
-    world.addComponent(tileEntity, Renderable as unknown as symbol, {
-      texture: TEX.blockDirt, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
-    });
-    render.addSprite(tileEntity, TEX.blockDirt, 5, 64, 64);
-    // Явно задаём позицию спрайта (защита от статических тел без движения)
-    render.setSpritePosition(tileEntity, gx + 32, groundTileY);
-    // Статическое тело для каждого тайла (땅 не должна падать или улетать)
-    world.addComponent(tileEntity, PhysicsBody as unknown as symbol, {
-      body: physics.createRectangleBody(tileEntity, gx + 32, groundTileY, 64, 64, {
-        isStatic: true, label: `ground-tile-${gx}`,
-      }),
-      gravityScale: 0, isSleeping: true,
-    });
-    world.addComponent(tileEntity, Material as unknown as symbol, {
-      mass: 0, density: 2000, strength: 10000, durability: 1,
-      sailArea: 0, airResistance: 1, state: 'solid',
-      temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.5,
-    });
-  }
   world.addComponent(groundEntity, Material as unknown as symbol, {
     mass: 0, density: 2000, strength: 10000, durability: 1,
     sailArea: 0, airResistance: 1, state: 'solid',
@@ -355,7 +332,9 @@ async function bootstrap(): Promise<void> {
   ];
 
   // Генерируем блоки каждые ~200px с вариацией высоты
+  // Пропускаем стартовую зону (600..900) — там детерминированные блоки со всеми 3 видами ресурсов
   for (let bx = 200; bx < LEVEL_WIDTH - 200; bx += 200) {
+    if (bx >= 600 && bx <= 900) continue;
     const roll = Math.floor(Math.random() * 12);
     let ore: { type: TileType; tex: string } | null = null;
     if (roll < 2) ore = oreTypes[2]; // ferrite_ore
@@ -373,6 +352,23 @@ async function bootstrap(): Promise<void> {
       tex: ore.tex,
     });
   }
+
+  // Стартовые блоки у игрока (x = 600..900): все 3 вида ресурсов (ferrite, resonit, stone)
+  const starterBlocks = [
+    { x: 660, type: 'stone' as TileType, tex: TEX.blockStone },
+    { x: 730, type: 'ferrite_ore' as TileType, tex: TEX.blockFerrite },
+    { x: 800, type: 'resonit_ore' as TileType, tex: TEX.blockResonit },
+    { x: 870, type: 'stone' as TileType, tex: TEX.blockStone },
+  ];
+  starterBlocks.forEach((sb) => {
+    blocks.push({
+      x: sb.x,
+      y: GROUND_SURFACE_Y - 32,
+      w: 64, h: 64,
+      type: sb.type,
+      tex: sb.tex,
+    });
+  });
 
   blocks.forEach((b, i) => {
     const entity = world.createEntity();
