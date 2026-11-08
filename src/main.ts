@@ -3,6 +3,7 @@
  * Исправленный билд: PixiJS v8 app.init(), текстуры вместо примитивов,
  * рабочая камера, добыча ресурсов по клавише E, инвентарь.
  */
+import * as PIXI from 'pixi.js';
 import { World } from './ecs/world';
 import { EventBus } from './core/event-bus';
 import { GameLoop } from './core/game-loop';
@@ -94,6 +95,9 @@ const TEX = {
   gravityAnchor: '/textures/gravity_anchor.png',
   gravityZone: '/textures/gravity_zone.png',
   energyDome: '/textures/energy_dome.png',
+  // Существа
+  creature_scavenger: '/textures/creature_scavenger.png',
+  creature_predator: '/textures/creature_predator.png',
   // UI
   bgSpace: '/textures/bg_space.png',
   uiSlot: '/textures/ui_slot.png',
@@ -176,16 +180,16 @@ async function bootstrap(): Promise<void> {
   // ============================================================================
   // 3. Игрок
   // ============================================================================
-  const PLAYER_RADIUS = 20;
+  const PLAYER_RADIUS = 28;
   const PLAYER_SPEED = 220;
   const PLAYER_JUMP = -750;
 
   const player = world.createEntity();
   world.addComponent(player, Transform as unknown as symbol, {
-    x: 200, y: 300, rotation: 0, scaleX: 1, scaleY: 1,
+    x: 200, y: 400, rotation: 0, scaleX: 1, scaleY: 1,
   });
   world.addComponent(player, PhysicsBody as unknown as symbol, {
-    body: physics.createCircleBody(player, 200, 300, PLAYER_RADIUS, {
+    body: physics.createCircleBody(player, 200, 400, PLAYER_RADIUS, {
       restitution: 0.1, friction: 0.5, density: 1, label: 'player',
     }),
     gravityScale: 1.0, isSleeping: false,
@@ -193,8 +197,8 @@ async function bootstrap(): Promise<void> {
   world.addComponent(player, Renderable as unknown as symbol, {
     texture: TEX.playerIdle0, tint: 0xffffff, alpha: 1, visible: true, layer: 10,
   });
-  // Анимированный спрайт персонажа (Idle кадры)
-  const playerSprite = render.addSprite(player, TEX.playerIdle0, 10, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2, true, 4, 0.15);
+  // Анимированный спрайт персонажа (Idle кадры) — размер 48x56
+  const playerSprite = render.addSprite(player, TEX.playerIdle0, 10, 48, 56, true, 4, 0.15);
   world.addComponent(player, Player as unknown as symbol, {
     health: 100, maxHealth: 100, speed: PLAYER_SPEED, jumpForce: PLAYER_JUMP, canDoubleJump: false,
   });
@@ -300,10 +304,30 @@ async function bootstrap(): Promise<void> {
     }),
     gravityScale: 0, isSleeping: true,
   });
-  world.addComponent(groundEntity, Renderable as unknown as symbol, {
-    texture: TEX.blockDirt, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
-  });
-  const groundSprite = render.addSprite(groundEntity, TEX.blockDirt, 5, LEVEL_WIDTH, GROUND_HEIGHT * 4);
+  // Отрисовываем землю рядом тайлов 64x64 вдоль всей поверхности (2 слоя вглубь)
+  const groundTopY = GROUND_Y - GROUND_HEIGHT * 2; // верхняя поверхность земли
+  for (let gx = 0; gx < LEVEL_WIDTH; gx += 64) {
+    const tileEntity = world.createEntity();
+    world.addComponent(tileEntity, Transform as unknown as symbol, {
+      x: gx + 32, y: groundTopY + 32, rotation: 0, scaleX: 1, scaleY: 1,
+    });
+    world.addComponent(tileEntity, Renderable as unknown as symbol, {
+      texture: TEX.blockDirt, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
+    });
+    render.addSprite(tileEntity, TEX.blockDirt, 5, 64, 64);
+    // Статическое тело для каждого тайла (땅 не должна падать или улетать)
+    world.addComponent(tileEntity, PhysicsBody as unknown as symbol, {
+      body: physics.createRectangleBody(tileEntity, gx + 32, groundTopY + 32, 64, 64, {
+        isStatic: true, label: `ground-tile-${gx}`,
+      }),
+      gravityScale: 0, isSleeping: true,
+    });
+    world.addComponent(tileEntity, Material as unknown as symbol, {
+      mass: 0, density: 2000, strength: 10000, durability: 1,
+      sailArea: 0, airResistance: 1, state: 'solid',
+      temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.5,
+    });
+  }
   world.addComponent(groundEntity, Material as unknown as symbol, {
     mass: 0, density: 2000, strength: 10000, durability: 1,
     sailArea: 0, airResistance: 1, state: 'solid',
@@ -327,8 +351,8 @@ async function bootstrap(): Promise<void> {
     else if (roll < 3) ore = oreTypes[3]; // resonit_ore
     else ore = oreTypes[Math.floor(Math.random() * 2)]; // stone
 
-    const offsetY = (Math.random() - 0.5) * 60; // вариация высоты ±30px
-    const y = GROUND_Y - 64 + offsetY;
+    const offsetY = (Math.random() - 0.5) * 30; // вариация высоты ±15px
+    const y = groundTopY - 32 + offsetY; // блоки стоят НА поверхности земли
 
     blocks.push({
       x: bx + 40 + Math.random() * 120, // вариация по X внутри ячейки
@@ -375,6 +399,46 @@ async function bootstrap(): Promise<void> {
       dropAmount: drop.amount,
       defaultEffectiveness: { dirt: 1.0, stone: 1.0, ferrite_ore: 1.0, resonit_ore: 1.0 },
     });
+  });
+
+  // ============================================================================
+  // Существа на уровне (3 сборщика, 2 хищника)
+  // ============================================================================
+  const creatureTypes: Array<{ tex: string; w: number; h: number }> = [
+    { tex: TEX.creature_scavenger, w: 48, h: 40 },
+    { tex: TEX.creature_predator, w: 52, h: 44 },
+  ];
+  const creatureSpawnX = [600, 1100, 1600]; // сборщики
+  const predatorSpawnX = [900, 1400]; // хищники
+
+  creatureSpawnX.forEach((sx, i) => {
+    const entity = world.createEntity();
+    const cy = groundTopY - 20;
+    world.addComponent(entity, Transform as unknown as symbol, { x: sx, y: cy, rotation: 0, scaleX: 1, scaleY: 1 });
+    world.addComponent(entity, PhysicsBody as unknown as symbol, {
+      body: physics.createRectangleBody(entity, sx, cy, 36, 32, {
+        restitution: 0.1, friction: 0.5, density: 1, label: `scavenger-${i}`,
+      }),
+      gravityScale: 1.0, isSleeping: false,
+    });
+    world.addComponent(entity, Renderable as unknown as symbol, { texture: TEX.creature_scavenger, tint: 0xffffff, alpha: 1, visible: true, layer: 10 });
+    render.addSprite(entity, TEX.creature_scavenger, 10, 48, 40);
+    world.addComponent(entity, Material as unknown as symbol, { mass: 5, density: 1000, strength: 2000, durability: 1, sailArea: 0.1, airResistance: 0.4, state: 'solid', temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.0 });
+  });
+
+  predatorSpawnX.forEach((px, i) => {
+    const entity = world.createEntity();
+    const cy = groundTopY - 22;
+    world.addComponent(entity, Transform as unknown as symbol, { x: px, y: cy, rotation: 0, scaleX: 1, scaleY: 1 });
+    world.addComponent(entity, PhysicsBody as unknown as symbol, {
+      body: physics.createRectangleBody(entity, px, cy, 44, 36, {
+        restitution: 0.1, friction: 0.5, density: 1, label: `predator-${i}`,
+      }),
+      gravityScale: 1.0, isSleeping: false,
+    });
+    world.addComponent(entity, Renderable as unknown as symbol, { texture: TEX.creature_predator, tint: 0xffffff, alpha: 1, visible: true, layer: 10 });
+    render.addSprite(entity, TEX.creature_predator, 10, 52, 44);
+    world.addComponent(entity, Material as unknown as symbol, { mass: 12, density: 1500, strength: 3000, durability: 1, sailArea: 0.15, airResistance: 0.5, state: 'solid', temperature: 20, burnable: false, flammable: false, thermalConductivity: 1.0 });
   });
 
   // ============================================================================
@@ -512,7 +576,78 @@ async function bootstrap(): Promise<void> {
     if (e.key === 'Escape') {
       buildingSystem.selectItem(null);
     }
+    // Способности гравитации
+    const stats = world.getComponent(player, CharacterStats as unknown as symbol) as { energy: number; maxEnergy: number; exhausted: boolean } | undefined;
+    const playerBody = physics.getBody(player);
+    const playerTransform = world.getComponent(player, Transform as unknown as symbol) as { x: number; y: number } | undefined;
+    if (!playerBody || !playerTransform || !stats || stats.exhausted) return;
+
+    const abilityCost = 15;
+    const abilityRadius = 250;
+    const abilityForce = 400;
+
+    if (e.key === 'q' || e.key === 'Q') {
+      if (stats.energy < abilityCost) return;
+      stats.energy -= abilityCost;
+      world.addComponent(player, CharacterStats as unknown as symbol, stats);
+      // Притяжение — все динамические объекты в радиусе тянутся к игроку
+      const actors = world.query(PhysicsBody, Transform, Material);
+      for (const { entity, components } of actors) {
+        if (entity === player) continue;
+        const bodyData = components[0] as { body: { isStatic: boolean } };
+        const bodyTransform = components[1] as { x: number; y: number };
+        if (bodyData.body.isStatic) continue; // статические объекты не двигаем
+        const dx = playerTransform.x - bodyTransform.x;
+        const dy = playerTransform.y - bodyTransform.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 0 && dist <= abilityRadius) {
+          const forceX = (dx / dist) * abilityForce;
+          const forceY = (dy / dist) * abilityForce;
+          physics.applyForce(bodyData.body, new Vec2(forceX, forceY));
+        }
+      }
+      showAbilityWave(playerTransform.x, playerTransform.y, 0x4cc9f0);
+    }
+    if (e.key === 'f' || e.key === 'F') {
+      if (stats.energy < abilityCost) return;
+      stats.energy -= abilityCost;
+      world.addComponent(player, CharacterStats as unknown as symbol, stats);
+      // Отталкивание — все динамические объекты в радиусе отбрасываются от игрока
+      const actors2 = world.query(PhysicsBody, Transform, Material);
+      for (const { entity, components } of actors2) {
+        if (entity === player) continue;
+        const bodyData = components[0] as { body: { isStatic: boolean } };
+        const bodyTransform = components[1] as { x: number; y: number };
+        if (bodyData.body.isStatic) continue;
+        const dx = bodyTransform.x - playerTransform.x;
+        const dy = bodyTransform.y - playerTransform.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 0 && dist <= abilityRadius) {
+          const forceX = (dx / dist) * abilityForce;
+          const forceY = (dy / dist) * abilityForce;
+          physics.applyForce(bodyData.body, new Vec2(forceX, forceY));
+        }
+      }
+      showAbilityWave(playerTransform.x, playerTransform.y, 0xff6600);
+    }
   });
+
+  // Визуальная волна способности (круг на 0.3 сек)
+  function showAbilityWave(cx: number, cy: number, color: number): void {
+    const wave = new PIXI.Graphics();
+    wave.lineStyle(4, color, 0.8);
+    wave.drawCircle(0, 0, 60);
+    wave.x = cx;
+    wave.y = cy;
+    wave.zIndex = 100;
+    const cameraLayer = render as any;
+    const container = cameraLayer.layers?.get(30) ?? cameraLayer.stage;
+    container.addChild(wave);
+    setTimeout(() => {
+      wave.parent?.removeChild(wave);
+      wave.destroy();
+    }, 300);
+  }
 
   // HUD обновление — стилизованные элементы
   const hpValEl = document.getElementById('hp-val');

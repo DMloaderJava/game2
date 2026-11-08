@@ -30,6 +30,9 @@ export class RenderService {
     gravity_anchor: 0x4cc9f0,
     gravity_zone: 0x4cc9f0,
     energy_dome: 0x00ffff,
+    // Существа
+    creature_scavenger: 0x06b6d4,
+    creature_predator: 0x7f1d1d,
     // Игрок (анимации)
     player_idle: 0xffdcb1,
     player_idle_0: 0xffdcb1,
@@ -73,6 +76,9 @@ export class RenderService {
       this.camera.addChild(container);
       this.layers.set(layer, container);
     }
+
+    // Фоновые декорации — звёзды и скалы с zIndex=-10 (позади игрока и земли)
+    this.addBackgroundDecorations(this.camera, 3000, this.app.renderer.screen.width, this.app.renderer.screen.height);
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
@@ -205,23 +211,30 @@ export class RenderService {
     ctx.fillRect(cx + 2, cy + 14, 6, 8);
   }
 
-  /** Слоистая инопланетная почва. */
+  /** Слоистая инопланетная почва — яркая и контрастная. */
   private drawGround(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-    // Верхний слой — фиолетовый мох
-    ctx.fillStyle = '#4a148c';
-    ctx.fillRect(0, 0, w, 14);
-    ctx.fillStyle = '#7b1fa2';
-    ctx.fillRect(0, 14, w, 10);
-    // Каменное тело
-    ctx.fillStyle = '#5d4037';
-    ctx.fillRect(0, 24, w, h - 24);
+    // Верхний слой — неоново-зелёный мох
+    ctx.fillStyle = '#10b981';
+    ctx.fillRect(0, 0, w, 8);
+    ctx.fillStyle = '#06b6d4';
+    ctx.fillRect(0, 8, w, 8);
+    // Каменное тело — тёмная фиолетово-серая порода
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(0, 16, w, h - 16);
+    // Камни и вкрапления
+    ctx.fillStyle = '#475569';
+    for (let i = 0; i < w / 64; i++) {
+      const rx = (i * 64) + (i % 3 === 0 ? 8 : i % 3 === 1 ? 24 : 40);
+      const ry = 20 + (i % 2 === 0 ? 0 : 10);
+      ctx.fillRect(rx, ry, 12, 8);
+    }
     // Трещины
-    ctx.strokeStyle = '#3e2723';
+    ctx.strokeStyle = '#1e293b';
     ctx.lineWidth = 1;
-    for (let i = 0; i < w; i += 32) {
+    for (let i = 0; i < w; i += 48) {
       ctx.beginPath();
-      ctx.moveTo(i, 24);
-      ctx.lineTo(i + 16, h);
+      ctx.moveTo(i, 16);
+      ctx.lineTo(i + 20, h);
       ctx.stroke();
     }
   }
@@ -316,6 +329,103 @@ export class RenderService {
     ctx.beginPath();
     ctx.arc(w / 2, h / 2, h / 2 - 8, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  /** Мирный сборщик — жук с зелёно-голубым панцирем. */
+  private drawScavenger(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    // Тело
+    ctx.fillStyle = '#059669';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 14, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Панцирь
+    ctx.fillStyle = '#06b6d4';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 2, 12, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Лапки
+    ctx.strokeStyle = '#047857';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const angle = (i - 1.5) * 0.4;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(angle) * 10, cy + Math.sin(angle) * 6);
+      ctx.lineTo(cx + Math.cos(angle) * 18, cy + Math.sin(angle) * 12);
+      ctx.stroke();
+    }
+    // Глаза
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(cx - 6, cy - 4, 2.5, 0, Math.PI * 2);
+    ctx.arc(cx + 6, cy - 4, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /** Хищник — красный/фиолетовый с шипами и светящими глазами. */
+  private drawPredator(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    // Тело
+    ctx.fillStyle = '#7f1d1d';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 14, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Шипы
+    ctx.fillStyle = '#991b1b';
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(angle) * 8, cy + Math.sin(angle) * 6);
+      ctx.lineTo(cx + Math.cos(angle) * 16, cy + Math.sin(angle) * 14);
+      ctx.lineTo(cx + Math.cos(angle + 0.3) * 10, cy + Math.sin(angle + 0.3) * 8);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Глаза (светящиеся фиолетовые)
+    ctx.fillStyle = '#c084fc';
+    ctx.beginPath();
+    ctx.arc(cx - 6, cy - 4, 3, 0, Math.PI * 2);
+    ctx.arc(cx + 6, cy - 4, 3, 0, Math.PI * 2);
+    ctx.fill();
+    // Блеск в глазах
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(cx - 5, cy - 5, 1, 0, Math.PI * 2);
+    ctx.arc(cx + 7, cy - 5, 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /* ── Фоновые декорации (звёзды и скалы, zIndex = -10) ─────── */
+
+  private addBackgroundDecorations(container: PIXI.Container, levelWidth: number, screenW: number, screenH: number): void {
+    // 100 звёзд/кристаллов
+    for (let i = 0; i < 100; i++) {
+      const x = Math.random() * levelWidth;
+      const y = Math.random() * screenH;
+      const size = Math.random() * 2 + 0.5;
+      const color = Math.random() > 0.5 ? 0x4cc9f0 : 0xc084fc;
+      const star = new PIXI.Graphics();
+      star.beginFill(color, 0.6);
+      star.drawCircle(0, 0, size);
+      star.endFill();
+      star.x = x;
+      star.y = y;
+      star.zIndex = -10;
+      container.addChild(star);
+    }
+
+    // Силуэты инопланетных скал вдоль уровня
+    for (let x = 0; x < levelWidth; x += 200) {
+      const rockH = 60 + Math.random() * 80;
+      const rock = new PIXI.Graphics();
+      rock.beginFill(0x1e293b);
+      rock.drawPolygon([x, screenH, x + 30, screenH - rockH, x + 60, screenH]);
+      rock.endFill();
+      rock.zIndex = -10;
+      container.addChild(rock);
+    }
   }
 
   /* ── Публичное API ─────────────────────────────────────────── */
