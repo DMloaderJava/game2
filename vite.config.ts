@@ -9,6 +9,7 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: true,
     cors: true,
+    hmr: false,
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',

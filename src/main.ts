@@ -603,4 +603,8 @@ async function bootstrap(): Promise<void> {
 
 bootstrap().catch((err) => {
   console.error('Failed to bootstrap game:', err);
+  const errDiv = document.createElement('pre');
+  errDiv.style.cssText = 'position:fixed;top:50%;left:10%;right:10%;background:#7f1d1d;color:#fff;padding:16px;z-index:99999;white-space:pre-wrap;font-size:14px;border:2px solid red;';
+  errDiv.textContent = 'BOOTSTRAP ERROR:\n' + (err?.stack || err?.message || String(err));
+  document.body.appendChild(errDiv);
 });
