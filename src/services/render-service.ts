@@ -5,7 +5,6 @@ export class RenderService {
   app: PIXI.Application | null = null;
   stage: PIXI.Container | null = null;
   camera: PIXI.Container | null = null;
-  bgLayer: PIXI.Container | null = null; // Звездный фон за камерой
 
   layers = new Map<number, PIXI.Container>();
   private displayObjects = new Map<number, any>();
@@ -68,11 +67,6 @@ export class RenderService {
     this.stage = this.app.stage;
     this.camera = new PIXI.Container();
     this.stage.addChild(this.camera);
-
-    // Фоновый слой за камерой — не уезжает при движении
-    this.bgLayer = new PIXI.Container();
-    this.stage.addChildAt(this.bgLayer, 0);
-    this.drawCosmicBackground();
 
     for (const layer of [0, 10, 20, 30]) {
       const container = new PIXI.Container();
@@ -221,7 +215,7 @@ export class RenderService {
     // Каменное тело
     ctx.fillStyle = '#5d4037';
     ctx.fillRect(0, 24, w, h - 24);
-    // Трексты / трещины
+    // Трещины
     ctx.strokeStyle = '#3e2723';
     ctx.lineWidth = 1;
     for (let i = 0; i < w; i += 32) {
@@ -395,26 +389,6 @@ export class RenderService {
     return displayObject;
   }
 
-  /** Добавить спрайт-мост (TilingSprite) для длинной земли — текстура повторяется. */
-  addTilingSprite(
-    entity: number,
-    textureUrl: string,
-    layer = 10,
-    width = 64,
-    height = 64,
-  ): any {
-    if (!this.app) return null;
-    const container = this.layers.get(layer);
-    if (!container) return null;
-
-    const texture = this.textures.get(textureUrl) ?? PIXI.Texture.WHITE;
-    const tiling = new PIXI.TilingSprite({ texture, width, height });
-    tiling.anchor.set(0.5);
-    container.addChild(tiling);
-    this.displayObjects.set(entity, tiling);
-    return tiling;
-  }
-
   /** Добавить спрайт из уже загруженной текстуры. */
   addSpriteFromTexture(entity: number, texture: PIXI.Texture, layer = 10): any {
     if (!this.app) return null;
@@ -470,6 +444,8 @@ export class RenderService {
 
   follow(targetX: number, targetY: number, lerp = 0.15): void {
     if (!this.camera || !this.app) return;
+    // Защита от NaN — камера не улетает за экран
+    if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) return;
     const screen = this.app.renderer.screen;
     // Камера держит игрока ровно в центре экрана
     this.camera.x = screen.width / 2 - targetX;
@@ -496,75 +472,13 @@ export class RenderService {
     }
   }
 
-  /** Задать текстуру фона (параллакс/космос). */
-  async setBackgroundTexture(url: string): Promise<void> {
-    const texture = await this.loadTexture(url);
-    const app = this.app;
-    if (!app || !texture) return;
-    const bg = new PIXI.Sprite(texture);
-    bg.width = app.renderer.width;
-    bg.height = app.renderer.height;
-    this.stage?.addChildAt(bg, 0);
-    this.displayObjects.set(-1, bg);
-  }
-
   destroy(): void {
     this.app?.destroy(true);
     this.app = null;
     this.stage = null;
     this.camera = null;
-    this.bgLayer = null;
     this.layers.clear();
     this.displayObjects.clear();
     this.textures.clear();
-  }
-
-  /* ── Космический фон ───────────────────────────────────────── */
-
-  private drawCosmicBackground(): void {
-    if (!this.bgLayer || !this.app) return;
-
-    const w = this.app.renderer.width;
-    const h = this.app.renderer.height;
-
-    // Градиентный фон
-    const bg = new PIXI.Graphics();
-    const gradient = bg.beginFill(0x0b1021);
-    bg.drawRect(0, 0, w, h);
-    bg.endFill();
-    this.bgLayer.addChild(bg);
-
-    // Звезды
-    const stars = new PIXI.Graphics();
-    stars.beginFill(0xffffff);
-    const starCount = Math.floor((w * h) / 4000);
-    for (let i = 0; i < starCount; i++) {
-      const x = Math.random() * w;
-      const y = Math.random() * h;
-      const size = Math.random() * 1.5 + 0.5;
-      const alpha = Math.random() * 0.7 + 0.3;
-      stars.beginFill(0xffffff, alpha);
-      stars.drawCircle(x, y, size);
-      stars.endFill();
-    }
-    this.bgLayer.addChild(stars);
-
-    // Туманность
-    const nebula = new PIXI.Graphics();
-    nebula.beginFill(0x4400aa, 0.15);
-    nebula.drawCircle(w * 0.3, h * 0.3, w * 0.4);
-    nebula.beginFill(0x0044aa, 0.1);
-    nebula.drawCircle(w * 0.7, h * 0.6, w * 0.3);
-    nebula.endFill();
-    this.bgLayer.addChild(nebula);
-
-    // Луна / планета
-    const planet = new PIXI.Graphics();
-    planet.beginFill(0x888888);
-    planet.drawCircle(w * 0.85, h * 0.15, 40);
-    planet.beginFill(0x666666);
-    planet.drawCircle(w * 0.82, h * 0.12, 12);
-    planet.endFill();
-    this.bgLayer.addChild(planet);
   }
 }

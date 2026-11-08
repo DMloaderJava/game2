@@ -30,6 +30,17 @@ import { CharacterStatsData } from './components/character';
 import { GravityAnchor } from './components/construction';
 import { EnergyDome } from './components/event-state';
 
+// Глобальный перехватчик ошибок игрового цикла (requestAnimationFrame)
+// bootstrap().catch() НЕ ловит ошибки внутри GameLoop
+window.addEventListener('error', (e) => {
+  const el = document.getElementById('debug-err') ||
+    document.body.appendChild(Object.assign(document.createElement('pre'), {
+      id: 'debug-err',
+      style: 'position:fixed;top:40%;left:5%;right:5%;background:#7f1d1d;color:#fff;padding:12px;z-index:99999;white-space:pre-wrap;font-size:14px;border:2px solid red;',
+    }));
+  el.textContent = 'RUNTIME ERROR: ' + (e.error?.stack || e.message);
+});
+
 import { InputSystem } from './systems/input-system';
 import { CharacterSystem } from './systems/character-system';
 import { StaminaEnergySystem } from './systems/stamina-energy-system';
@@ -136,14 +147,11 @@ async function bootstrap(): Promise<void> {
   await render.init({
     width: window.innerWidth,
     height: window.innerHeight,
-    background: 0x05050a,
+    background: 0x111827,
   });
 
   // Предзагружаем текстуры
   await render.loadTextures(Object.values(TEX));
-
-  // Фон космоса
-  await render.setBackgroundTexture(TEX.bgSpace);
 
   // ============================================================================
   // 2. Мир ECS
@@ -251,7 +259,7 @@ async function bootstrap(): Promise<void> {
   world.addComponent(leftWall, Renderable as unknown as symbol, {
     texture: TEX.blockStoneWall, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
   });
-  const leftWallSprite = render.addTilingSprite(leftWall, TEX.blockStoneWall, 5, WALL_THICKNESS, GROUND_HEIGHT + 400);
+  const leftWallSprite = render.addSprite(leftWall, TEX.blockStoneWall, 5, WALL_THICKNESS, GROUND_HEIGHT + 400);
   world.addComponent(leftWall, Material as unknown as symbol, {
     mass: 0, density: 5000, strength: 50000, durability: 1,
     sailArea: 0, airResistance: 1, state: 'solid',
@@ -273,7 +281,7 @@ async function bootstrap(): Promise<void> {
   world.addComponent(rightWall, Renderable as unknown as symbol, {
     texture: TEX.blockStoneWall, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
   });
-  const rightWallSprite = render.addTilingSprite(rightWall, TEX.blockStoneWall, 5, WALL_THICKNESS, GROUND_HEIGHT + 400);
+  const rightWallSprite = render.addSprite(rightWall, TEX.blockStoneWall, 5, WALL_THICKNESS, GROUND_HEIGHT + 400);
   world.addComponent(rightWall, Material as unknown as symbol, {
     mass: 0, density: 5000, strength: 50000, durability: 1,
     sailArea: 0, airResistance: 1, state: 'solid',
@@ -295,7 +303,7 @@ async function bootstrap(): Promise<void> {
   world.addComponent(groundEntity, Renderable as unknown as symbol, {
     texture: TEX.blockDirt, tint: 0xffffff, alpha: 1, visible: true, layer: 5,
   });
-  const groundSprite = render.addTilingSprite(groundEntity, TEX.blockDirt, 5, LEVEL_WIDTH, GROUND_HEIGHT * 4);
+  const groundSprite = render.addSprite(groundEntity, TEX.blockDirt, 5, LEVEL_WIDTH, GROUND_HEIGHT * 4);
   world.addComponent(groundEntity, Material as unknown as symbol, {
     mass: 0, density: 2000, strength: 10000, durability: 1,
     sailArea: 0, airResistance: 1, state: 'solid',
