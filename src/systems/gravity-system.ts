@@ -16,6 +16,8 @@ import { GravityAnchor } from '../components/construction';
 /**
  * GravitySystem — контроллер гравитации.
  * Вычисляет эффективную гравитацию для каждой сущности и записывает в GravityForce.
+ * Гравитационный якорь применяет противоположную силу через Matter.Body.applyForce,
+ * чтобы удерживать объекты в куполе во время инверсии гравитации.
  * Приоритет 25 — перед PhysicsSystem (30).
  */
 export class GravitySystem extends System {
@@ -26,16 +28,22 @@ export class GravitySystem extends System {
   private zones = new Map<string, any>();
   private globalEntity = -1;
   private global: { vector: Vec2; scale: number; active: boolean } | null = null;
+  private physicsService: { applyForce: (body: unknown, force: Vec2) => void } | null = null;
 
   constructor(
     private world: World,
-    private physics: { applyForce: (body: unknown, force: Vec2) => void },
+    physicsService: { applyForce: (body: unknown, force: Vec2) => void },
     private eventBus: EventBus,
   ) {
     super();
     this.worldRef = world;
+    this.physicsService = physicsService;
     // Гарантируем существование глобальной сущности гравитации ещё до вызова setGlobalGravity
     this.ensureGlobalEntity();
+  }
+
+  setPhysicsService(physics: { applyForce: (body: unknown, force: Vec2) => void }): void {
+    this.physicsService = physics;
   }
 
   setGlobalGravity(vector: Vec2, scale = 1, active = true): void {
@@ -148,25 +156,13 @@ export class GravitySystem extends System {
         world.addComponent(entity, GravityForce as unknown as symbol, { vector: force, dirty: true });
       }
     }
+
+    // Применяем физическую силу якоря к сущностям в его радиусе во время инверсии гравитации
+    this.applyAnchorForces(dt);
   }
 
+  /** Вычисляет эффективную гравитацию для сущности (без хардкода якоря). */
   computeEffectiveGravity(entity: number, pos: Vec2): Vec2 {
-    // Защита Гравитационного якоря: если сущность в радиусе активного якоря,
-    // гравитация всегда направлена вниз (нормальная), даже в фазе катастрофы.
-    const anchors = this.worldRef.query(GravityAnchor, Transform);
-    for (const { components } of anchors) {
-      const anchorData = components[0] as { active: boolean; radius: number };
-      const anchorTransform = components[1] as { x: number; y: number };
-      if (anchorData.active && anchorTransform) {
-        const dx = pos.x - anchorTransform.x;
-        const dy = pos.y - anchorTransform.y;
-        if (Math.hypot(dx, dy) <= anchorData.radius) {
-          // Внутри зоны защиты якоря — нормальная гравитация вниз
-          return new Vec2(0, 9.81 * 60);
-        }
-      }
-    }
-
     let base = Vec2.zero();
 
     if (this.global?.active) {
@@ -193,6 +189,47 @@ export class GravitySystem extends System {
     return base.mul(indiv?.scale ?? 1);
   }
 
+  /** Применяет противоположную силу якоря к сущностям в его радиусе. */
+  private applyAnchorForces(dt: number): void {
+    if (!this.physicsService) return;
+
+    const anchors = this.worldRef.query(GravityAnchor, Transform);
+    const globalVec = this.getGlobalGravity();
+    const isInverted = globalVec ? globalVec.y < 0 : false;
+
+    for (const { entity, components } of anchors) {
+      const anchorData = components[0] as { active: boolean; radius: number };
+      const anchorTransform = components[1] as { x: number; y: number };
+      if (!anchorData.active || !anchorTransform) continue;
+
+      const anchorPos = new Vec2(anchorTransform.x, anchorTransform.y);
+      const radius = anchorData.radius;
+
+      // Находим все динамические тела в радиусе якоря
+      const bodies = this.worldRef.query(PhysicsBody, Transform, Material);
+      for (const { entity: bodyEntity, components: bodyComponents } of bodies) {
+        const bodyData = bodyComponents[0] as { body: { isStatic: boolean } };
+        const bodyTransform = bodyComponents[1] as { x: number; y: number };
+        const material = bodyComponents[2] as { mass: number };
+
+        if (!bodyData.body || bodyData.body.isStatic) continue;
+        if (bodyEntity === entity) continue; // не применяем к самому якорю
+
+        const dx = bodyTransform.x - anchorPos.x;
+        const dy = bodyTransform.y - anchorPos.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > radius || dist === 0) continue;
+
+        // Во время инверсии гравитации — прикладываем силу вниз, чтобы удержать в куполе
+        if (isInverted) {
+          const forceStrength = material.mass * 9.81 * 60 * 1.5; // компенсация инвертированной гравитации
+          const force = new Vec2(0, forceStrength);
+          this.physicsService.applyForce(bodyData.body, force);
+        }
+      }
+    }
+  }
+
   applyForcesToBodies(dt: number): void {
     const bodies = this.worldRef.query(PhysicsBody, GravityForce, Material);
     for (const { entity, components } of bodies) {
@@ -202,16 +239,16 @@ export class GravitySystem extends System {
 
       if (!forceData.dirty || !bodyData.body) continue;
 
-      // Ограничиваем силу гравитации, чтобы не выстреливать тела в космос
-    const rawForce = forceData.vector.mul(material.mass);
-    const clampedForce = new Vec2(
-      Math.max(-500, Math.min(500, rawForce.x)),
-      Math.max(-500, Math.min(500, rawForce.y)),
-    );
-    this.physics.applyForce(bodyData.body, clampedForce);
+      const rawForce = forceData.vector.mul(material.mass);
+      const clampedForce = new Vec2(
+        Math.max(-500, Math.min(500, rawForce.x)),
+        Math.max(-500, Math.min(500, rawForce.y)),
+      );
+      if (!this.physicsService) continue;
+      this.physicsService.applyForce(bodyData.body, clampedForce);
 
-    forceData.dirty = false;
-    this.worldRef.addComponent(entity, GravityForce as unknown as symbol, forceData);
+      forceData.dirty = false;
+      this.worldRef.addComponent(entity, GravityForce as unknown as symbol, forceData);
     }
   }
 
@@ -254,7 +291,7 @@ export class GravitySystem extends System {
         falloff: zone.falloff,
         coreRadius: zone.coreRadius,
         active: zone.active,
-      }));
+      })) as any;
     }
   }
 
